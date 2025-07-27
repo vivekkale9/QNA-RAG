@@ -203,3 +203,23 @@ async def get_current_user(
         )
     
     return user
+
+def require_role(required_role: str):
+    """
+    Decorator to require a specific user role.
+    
+    Args:
+        required_role: Required user role
+        
+    Returns:
+        Function: Dependency function
+    """
+    async def role_checker(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role != required_role:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Operation requires {required_role} role"
+            )
+        return current_user
+    
+    return role_checker 

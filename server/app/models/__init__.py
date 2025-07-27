@@ -3,7 +3,8 @@ from .auth import (
     UserResponse,
     UserLogin,
     UserUpdate,
-    PasswordUpdate
+    PasswordUpdate,
+    LLMConfigUpdate
 )
 
 __all__ = [
@@ -11,5 +12,6 @@ __all__ = [
     "UserCreate",
     "UserLogin",
     "UserUpdate",
-    "PasswordUpdate"
+    "PasswordUpdate",
+    "LLMConfigUpdate"
 ]

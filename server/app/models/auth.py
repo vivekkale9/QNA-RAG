@@ -32,3 +32,11 @@ class UserUpdate(BaseModel):
 class PasswordUpdate(BaseModel):
     current_password: str = Field(..., description="Current password")
     new_password: str = Field(..., min_length=8, description="New password (min 8 characters)")
+
+class LLMConfigUpdate(BaseModel):
+    llm_provider: Optional[str] = Field(None, description="LLM provider (groq, openai, etc.)")
+    model: Optional[str] = Field(None, description="Specific model to use")
+    api_key: Optional[str] = Field(None, description="User's own API key")
+    max_tokens: Optional[int] = Field(None, ge=1, le=8000, description="Maximum tokens per request")
+    temperature: Optional[float] = Field(None, ge=0.0, le=2.0, description="Response creativity")
+    base_url: Optional[str] = Field(None, description="Custom API base URL") 

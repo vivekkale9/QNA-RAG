@@ -7,10 +7,11 @@ for the main application to include.
 
 from fastapi import APIRouter
 
-from . import auth
+from . import auth_routes, user_routes
 
 api_router = APIRouter(prefix="/rag")
 
-api_router.include_router(auth.router, tags=["Authentication"])
+api_router.include_router(auth_routes.router, tags=["Authentication"])
+api_router.include_router(user_routes.router, tags=["User"])
 
 __all__ = ["api_router"] 

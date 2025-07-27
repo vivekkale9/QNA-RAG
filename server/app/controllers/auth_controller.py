@@ -4,7 +4,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..services import AuthService
-from ..models import UserCreate, UserResponse, UserLogin, UserUpdate
+from ..models import UserCreate, UserResponse, UserLogin
 from ..utils import create_user_token
 from ..middlewares import rate_limiter
 
@@ -91,63 +91,3 @@ class AuthController:
             Dict containing new access token and user info
         """
         return await self.auth_service.refresh_token(refresh_token, db)
-    
-    async def get_profile(self, user_id: str, db_session) -> UserResponse:
-        """
-        Get user profile.
-        
-        Args:
-            user_id: Current user ID
-            db_session: Database session
-            
-        Returns:
-            UserResponse: User profile information
-        """
-        user = await self.auth_service.get_user_profile(user_id, db_session)
-        return UserResponse.model_validate(user)
-    
-    async def update_profile(
-        self, 
-        user_id: str, 
-        user_update: UserUpdate, 
-        db_session
-    ) -> UserResponse:
-        """
-        Update user profile.
-        
-        Args:
-            user_id: Current user ID
-            user_update: Profile update data
-            db_session: Database session
-            
-        Returns:
-            UserResponse: Updated user information
-        """
-        user = await self.auth_service.update_user_profile(
-            user_id, user_update, db_session
-        )
-        return UserResponse.model_validate(user)
-    
-    async def change_password(
-        self, 
-        user_id: str, 
-        current_password: str, 
-        new_password: str, 
-        db_session
-    ) -> Dict[str, str]:
-        """
-        Change user password.
-        
-        Args:
-            user_id: Current user ID
-            current_password: Current password
-            new_password: New password
-            db_session: Database session
-            
-        Returns:
-            Dict containing success message
-        """
-        await self.auth_service.change_password(
-            user_id, current_password, new_password, db_session
-        )
-        return {"message": "Password changed successfully"}

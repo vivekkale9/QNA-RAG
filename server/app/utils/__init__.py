@@ -4,7 +4,8 @@ from .auth import (
     verify_password,
     verify_token,
     verify_refresh_token,
-    get_current_user
+    get_current_user,
+    require_role
 )
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "verify_password",
     "verify_token",
     "verify_refresh_token",
-    "get_current_user"
+    "get_current_user",
+    "require_role"
 ]
