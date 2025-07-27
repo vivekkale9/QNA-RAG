@@ -2,11 +2,16 @@ import bcrypt
 import jwt
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta, timezone
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
-from ..db import User
+from ..db import User,get_postgres_database
 from ..config import get_settings
+
 settings = get_settings()
+security = HTTPBearer(auto_error=False)
 
 def hash_password(password: str) -> str:
     """
@@ -141,3 +146,60 @@ def verify_token(token: str, token_type: str = "access") -> Dict[str, Any]:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials"
         )
+    
+def verify_refresh_token(refresh_token: str) -> Dict[str, Any]:
+    """
+    Verify a refresh token.
+    
+    Args:
+        refresh_token: JWT refresh token
+        
+    Returns:
+        Dict[str, Any]: Token payload
+    """
+    return verify_token(refresh_token, "refresh")
+
+async def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: AsyncSession = Depends(get_postgres_database)
+) -> User:
+    """
+    Get the current authenticated user.
+    
+    Args:
+        credentials: JWT credentials from request
+        db: PostgreSQL database session
+        
+    Returns:
+        User: Current user object
+        
+    Raises:
+        HTTPException: If authentication fails
+    """
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated"
+        )
+    
+    # Verify token
+    payload = verify_token(credentials.credentials)
+    user_id = payload.get("user_id")
+    
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials"
+        )
+    
+    # Get user from PostgreSQL
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found"
+        )
+    
+    return user

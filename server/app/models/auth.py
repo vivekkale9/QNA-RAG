@@ -20,6 +20,15 @@ class UserResponse(UserBase):
         from_attributes = True
 
 class UserLogin(BaseModel):
-    """Model for user login."""
     email: EmailStr = Field(..., description="User email address")
     password: str = Field(..., description="User password")
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = Field(None, description="Updated full name")
+    email: Optional[EmailStr] = Field(None, description="Updated email address")
+    is_active: Optional[bool] = Field(None, description="Updated active status")
+    role: Optional[str] = Field(None, description="Updated user role") 
+
+class PasswordUpdate(BaseModel):
+    current_password: str = Field(..., description="Current password")
+    new_password: str = Field(..., min_length=8, description="New password (min 8 characters)")
