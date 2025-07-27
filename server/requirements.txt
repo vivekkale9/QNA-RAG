@@ -10,3 +10,6 @@ databases[postgresql]==0.8.0
 sqlalchemy[asyncio]==1.4.49
 
 bcrypt==4.1.2
+PyJWT==2.8.0
+
+python-multipart==0.0.6

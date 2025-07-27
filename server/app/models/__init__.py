@@ -1,9 +1,11 @@
 from .auth import (
     UserCreate,
-    UserResponse
+    UserResponse,
+    UserLogin
 )
 
 __all__ = [
     "UserResponse",
-    "UserCreate"
+    "UserCreate",
+    "UserLogin"
 ]

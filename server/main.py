@@ -9,6 +9,9 @@ from app.routes import api_router
 from app.db import (
     init_postgres_db, connect_to_postgres, disconnect_from_postgres
 )
+from app.middlewares import (
+    AuthenticationMiddleware
+)
 
 # Configure logging
 logging.basicConfig(
@@ -57,6 +60,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+app.add_middleware(AuthenticationMiddleware)
+
 app.include_router(api_router)
 
 @app.get("/")
@@ -79,5 +84,4 @@ if __name__ == "__main__":
         host=settings.api_host,
         port=settings.api_port,
         reload=settings.environment == "development",
-        log_level=settings.log_level.lower()
     ) 

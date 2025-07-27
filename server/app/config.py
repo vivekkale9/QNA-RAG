@@ -28,6 +28,11 @@ class Settings(BaseModel):
     postgres_password: str = os.getenv("POSTGRES_PASSWORD", "")
     postgres_db: str = os.getenv("POSTGRES_DB", "docuchat")
 
+    algorithm: str = os.getenv("ALGORITHM", "HS256")
+    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+    secret_key: str = os.getenv("SECRET_KEY", "")
+
     @property
     def postgres_url(self) -> str:
         """PostgreSQL connection URL."""

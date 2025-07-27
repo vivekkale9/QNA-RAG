@@ -18,3 +18,8 @@ class UserResponse(UserBase):
 
     class Config:
         from_attributes = True
+
+class UserLogin(BaseModel):
+    """Model for user login."""
+    email: EmailStr = Field(..., description="User email address")
+    password: str = Field(..., description="User password")
