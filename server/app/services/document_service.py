@@ -10,6 +10,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status, UploadFile
+from bson import ObjectId
 
 from ..db.postgres import User
 from ..db.mongodb import Document, Chunk
@@ -124,7 +125,8 @@ class DocumentService:
                     file_type=file_type,
                     file_size=file_size,
                     user_id=user_id,
-                    status=DocumentStatus.PROCESSING
+                    status=DocumentStatus.PROCESSING,
+                    record_status=1  # Set as active document
                 )
                 
                 # Save document to MongoDB
@@ -197,10 +199,22 @@ class DocumentService:
                     detail="User not found"
                 )
             
-            # Get document from MongoDB
-            document = await Document.get(document_id)
+            # Get document from MongoDB (only active documents)
+            try:
+                obj_id = ObjectId(document_id)
+            except Exception:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid document ID format"
+                )
             
-            if not document or document.user_id != user_id:
+            document = await Document.find_one(
+                Document.id == obj_id,
+                Document.user_id == user_id,
+                Document.record_status == 1
+            )
+            
+            if not document:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Document not found"
@@ -208,13 +222,16 @@ class DocumentService:
             
             return DocumentResponse(
                 id=str(document.id),
-                filename=document.filename,
-                file_type=document.file_type,
+                name=document.original_filename,
                 file_size=document.file_size,
+                file_type=document.file_type,
                 status=document.status,
-                chunk_count=document.chunk_count,
-                created_at=document.created_at,
-                processed_at=document.processed_at
+                chunk_count=document.total_chunks,
+                query_count=0,  # Default value, can be enhanced later
+                uploaded_at=document.uploaded_at,
+                processed_at=document.processed_at,
+                user_id=document.user_id,
+                file_path=document.file_path
             )
             
         except HTTPException:
@@ -257,21 +274,25 @@ class DocumentService:
                     detail="User not found"
                 )
             
-            # Get documents from MongoDB
+            # Get documents from MongoDB (only active documents)
             documents = await Document.find(
-                Document.user_id == user_id
+                Document.user_id == user_id,
+                Document.record_status == 1
             ).skip(skip).limit(limit).to_list()
             
             return [
                 DocumentResponse(
                     id=str(doc.id),
-                    filename=doc.filename,
-                    file_type=doc.file_type,
+                    name=doc.original_filename,
                     file_size=doc.file_size,
+                    file_type=doc.file_type,
                     status=doc.status,
-                    chunk_count=doc.chunk_count,
-                    created_at=doc.created_at,
-                    processed_at=doc.processed_at
+                    chunk_count=doc.total_chunks,
+                    query_count=0,  # Default value, can be enhanced later
+                    uploaded_at=doc.uploaded_at,
+                    processed_at=doc.processed_at,
+                    user_id=doc.user_id,
+                    file_path=doc.file_path
                 )
                 for doc in documents
             ]
@@ -293,7 +314,7 @@ class DocumentService:
         vector_store: MilvusVectorStore
     ) -> Dict[str, Any]:
         """
-        Delete a document and its chunks.
+        Soft delete a document by updating its record_status to -1.
         
         Args:
             document_id: Document ID
@@ -316,25 +337,36 @@ class DocumentService:
                     detail="User not found"
                 )
             
-            # Get document from MongoDB
-            document = await Document.get(document_id)
+            # Get document from MongoDB (only active documents)
+            try:
+                obj_id = ObjectId(document_id)
+            except Exception:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid document ID format"
+                )
             
-            if not document or document.user_id != user_id:
+            document = await Document.find_one(
+                Document.id == obj_id,
+                Document.user_id == user_id,
+                Document.record_status == 1
+            )
+            
+            if not document:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Document not found"
                 )
             
-            # Delete chunks from MongoDB
-            await Chunk.find(Chunk.document_id == document_id).delete()
+            # Soft delete: update record_status to -1
+            document.record_status = -1
+            document.updated_at = datetime.now(timezone.utc)
+            await document.save()
             
             # Remove from vector store
-            await vector_store.remove_document_embeddings(document_id)
+            await vector_store.delete_document_chunks(user_id, document_id)
             
-            # Delete document from MongoDB
-            await document.delete()
-            
-            logger.info(f"Document deleted: {document.filename} by user {user_id}")
+            logger.info(f"Document soft deleted: {document.filename} by user {user_id}")
             
             return {"message": "Document deleted successfully"}
             
@@ -376,10 +408,22 @@ class DocumentService:
                     detail="User not found"
                 )
             
-            # Get document from MongoDB
-            document = await Document.get(document_id)
+            # Get document from MongoDB (only active documents)
+            try:
+                obj_id = ObjectId(document_id)
+            except Exception:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid document ID format"
+                )
             
-            if not document or document.user_id != user_id:
+            document = await Document.find_one(
+                Document.id == obj_id,
+                Document.user_id == user_id,
+                Document.record_status == 1
+            )
+            
+            if not document:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Document not found"

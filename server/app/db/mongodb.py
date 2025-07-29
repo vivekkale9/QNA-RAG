@@ -55,6 +55,9 @@ class Document(BeanieDocument):
     # User association
     user_id: str  # Reference to PostgreSQL User.id
     
+    # Record status for soft delete (1 = active, -1 = deleted)
+    record_status: int = 1
+    
     # Timestamps
     uploaded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     processed_at: Optional[datetime] = None
@@ -65,6 +68,7 @@ class Document(BeanieDocument):
         indexes = [
             IndexModel([("user_id", ASCENDING)]),
             IndexModel([("status", ASCENDING)]),
+            IndexModel([("record_status", ASCENDING)]),
             IndexModel([("file_type", ASCENDING)]),
             IndexModel([("uploaded_at", DESCENDING)]),
             IndexModel([("filename", ASCENDING)]),

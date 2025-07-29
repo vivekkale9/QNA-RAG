@@ -59,7 +59,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             
         except Exception as e:
             # Log the error in production
-            if settings.ENVIRONMENT == "production":
+            if settings.environment == "production":
                 # In production, log the full traceback but return generic message
                 print(f"Unhandled exception: {traceback.format_exc()}")
                 return JSONResponse(
@@ -80,6 +80,6 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                         "message": str(e),
                         "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
                         "path": str(request.url.path),
-                        "traceback": traceback.format_exc() if settings.DEBUG else None
+                        "traceback": traceback.format_exc() if settings.debug else None
                     }
                 ) 

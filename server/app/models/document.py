@@ -36,12 +36,12 @@ class DocumentCreate(DocumentBase):
     """Model for document creation during upload."""
     file_size: int = Field(..., description="File size in bytes")
     file_type: DocumentType = Field(..., description="Document type")
-    user_id: int = Field(..., description="Owner user ID")
+    user_id: str = Field(..., description="Owner user ID")
 
 
 class DocumentResponse(DocumentBase):
     """Model for document response."""
-    id: int = Field(..., description="Document ID")
+    id: str = Field(..., description="Document ID")
     file_size: int = Field(..., description="File size in bytes")
     file_type: DocumentType = Field(..., description="Document type")
     status: DocumentStatus = Field(..., description="Processing status")
@@ -49,7 +49,7 @@ class DocumentResponse(DocumentBase):
     query_count: int = Field(default=0, description="Number of queries against this document")
     uploaded_at: datetime = Field(..., description="Upload timestamp")
     processed_at: Optional[datetime] = Field(None, description="Processing completion timestamp")
-    user_id: int = Field(..., description="Owner user ID")
+    user_id: str = Field(..., description="Owner user ID")
     file_path: str = Field(..., description="File storage path")
 
     class Config:
@@ -65,8 +65,8 @@ class DocumentUpdate(BaseModel):
 
 class ChunkResponse(BaseModel):
     """Model for document chunk information."""
-    id: int = Field(..., description="Chunk ID")
-    document_id: int = Field(..., description="Parent document ID")
+    id: str = Field(..., description="Chunk ID")
+    document_id: str = Field(..., description="Parent document ID")
     content: str = Field(..., description="Chunk text content")
     chunk_index: int = Field(..., description="Chunk position in document")
     page_number: Optional[int] = Field(None, description="Source page number")
@@ -87,7 +87,7 @@ class UploadResponse(BaseModel):
 
 class ProcessingStatus(BaseModel):
     """Model for processing status check."""
-    document_id: int = Field(..., description="Document ID")
+    document_id: str = Field(..., description="Document ID")
     status: DocumentStatus = Field(..., description="Current processing status")
     progress: int = Field(..., description="Processing progress percentage")
     chunks_processed: int = Field(default=0, description="Number of chunks processed")
@@ -98,7 +98,7 @@ class ProcessingStatus(BaseModel):
 class DocumentSearchRequest(BaseModel):
     """Model for document search request."""
     query: str = Field(..., description="Search query")
-    document_ids: Optional[List[int]] = Field(None, description="Specific document IDs to search")
+    document_ids: Optional[List[str]] = Field(None, description="Specific document IDs to search")
     limit: int = Field(default=10, description="Maximum number of results")
     similarity_threshold: float = Field(default=0.7, description="Minimum similarity threshold")
 

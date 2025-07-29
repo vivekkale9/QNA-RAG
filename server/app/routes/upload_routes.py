@@ -8,9 +8,12 @@ from ..utils import get_current_user
 from ..db import MilvusVectorStore, get_postgres_database
 from ..utils.sse import get_sse_headers, create_sse_generator, DocumentProcessingEventEmitter
 from ..services import DocumentService
+from ..models import DocumentResponse
+from ..controllers import UploadController
 
 router = APIRouter(prefix="/upload", tags=["Document Upload"])
 document_service = DocumentService()
+upload_controller = UploadController()
 
 @router.post("/", response_class=StreamingResponse)
 async def upload_document_stream(
@@ -64,3 +67,34 @@ async def upload_document_stream(
         media_type="text/event-stream",
         headers=get_sse_headers()
     )
+
+@router.get("/", response_model=List[DocumentResponse])
+async def get_documents(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    current_user = Depends(get_current_user),
+    db_session = Depends(get_postgres_database)
+):
+    return await upload_controller.get_documents(
+        current_user.id, skip, limit, db_session
+    )
+
+@router.get("/{document_id}", response_model=DocumentResponse)
+async def get_document(
+    document_id: str,
+    current_user = Depends(get_current_user),
+    db_session = Depends(get_postgres_database)
+):
+    return await upload_controller.get_document(
+        document_id, current_user.id, db_session
+    )
+
+@router.delete("/{document_id}", response_model=dict)
+async def delete_document(
+    document_id: str,
+    current_user = Depends(get_current_user),
+    db_session = Depends(get_postgres_database)
+):
+    return await upload_controller.delete_document(
+        document_id, current_user.id, db_session
+    ) 
