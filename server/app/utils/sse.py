@@ -1,0 +1,206 @@
+import json
+import asyncio
+from typing import Dict, Any, AsyncGenerator
+from enum import Enum
+
+
+class ProcessingStatus(str, Enum):
+    STARTED = "started"
+    VALIDATING = "validating"
+    EXTRACTING = "extracting"
+    CHUNKING = "chunking"
+    EMBEDDING = "embedding"
+    STORING = "storing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class SSEMessage:
+    
+    def __init__(self, event: str = None, data: Any = None, id: str = None, retry: int = None):
+        self.event = event
+        self.data = data
+        self.id = id
+        self.retry = retry
+    
+    def format(self) -> str:
+        lines = []
+        
+        if self.id:
+            lines.append(f"id: {self.id}")
+        
+        if self.event:
+            lines.append(f"event: {self.event}")
+        
+        if self.retry:
+            lines.append(f"retry: {self.retry}")
+        
+        if self.data is not None:
+            if isinstance(self.data, (dict, list)):
+                data_str = json.dumps(self.data)
+            else:
+                data_str = str(self.data)
+            lines.append(f"data: {data_str}")
+        
+        return "\n".join(lines) + "\n\n"
+
+
+class DocumentProcessingEventEmitter:
+    
+    def __init__(self):
+        self.callbacks = []
+        self.current_status = None
+        self.progress = 0
+        self.total_steps = 6  # validating, extracting, chunking, embedding, storing, completed
+    
+    def add_callback(self, callback):
+        self.callbacks.append(callback)
+    
+    async def emit_status(self, status: ProcessingStatus, message: str = None, data: Dict[str, Any] = None):
+        self.current_status = status
+        
+        # Calculate progress based on status
+        status_progress = {
+            ProcessingStatus.STARTED: 0,
+            ProcessingStatus.VALIDATING: 10,
+            ProcessingStatus.EXTRACTING: 25,
+            ProcessingStatus.CHUNKING: 45,
+            ProcessingStatus.EMBEDDING: 65,
+            ProcessingStatus.STORING: 85,
+            ProcessingStatus.COMPLETED: 100,
+            ProcessingStatus.FAILED: self.progress  # Keep current progress on failure
+        }
+        
+        self.progress = status_progress.get(status, self.progress)
+        
+        event_data = {
+            "status": status.value,
+            "progress": self.progress,
+            "message": message or self._get_default_message(status),
+            "timestamp": asyncio.get_event_loop().time(),
+            **(data or {})
+        }
+        
+        # Emit to all callbacks
+        for callback in self.callbacks:
+            try:
+                await callback(event_data)
+            except Exception as e:
+                # Log error but don't stop processing
+                pass
+    
+    def _get_default_message(self, status: ProcessingStatus) -> str:
+        messages = {
+            ProcessingStatus.STARTED: "Starting document processing...",
+            ProcessingStatus.VALIDATING: "Validating file format and size...",
+            ProcessingStatus.EXTRACTING: "Extracting text from document...",
+            ProcessingStatus.CHUNKING: "Creating intelligent text chunks...",
+            ProcessingStatus.EMBEDDING: "Generating embeddings...",
+            ProcessingStatus.STORING: "Storing in vector database...",
+            ProcessingStatus.COMPLETED: "Document processed successfully!",
+            ProcessingStatus.FAILED: "Document processing failed."
+        }
+        return messages.get(status, "Processing...")
+
+
+async def create_sse_generator(
+    emitter: DocumentProcessingEventEmitter,
+    timeout: int = 300  # 5 minutes timeout
+) -> AsyncGenerator[str, None]:
+    """
+    Create an SSE generator that yields formatted SSE messages.
+    
+    Args:
+        emitter: Event emitter instance
+        timeout: Maximum time to wait for completion (seconds)
+        
+    Yields:
+        Formatted SSE message strings
+    """
+    start_time = asyncio.get_event_loop().time()
+    events_queue = asyncio.Queue()
+    
+    # Add callback to emitter to put events in queue
+    async def queue_callback(event_data):
+        await events_queue.put(event_data)
+    
+    emitter.add_callback(queue_callback)
+    
+    try:
+        while True:
+            try:
+                # Wait for next event with timeout
+                remaining_time = timeout - (asyncio.get_event_loop().time() - start_time)
+                if remaining_time <= 0:
+                    # Send timeout message
+                    timeout_msg = SSEMessage(
+                        event="error",
+                        data={"error": "Processing timeout", "status": "failed"}
+                    )
+                    yield timeout_msg.format()
+                    break
+                
+                event_data = await asyncio.wait_for(events_queue.get(), timeout=remaining_time)
+                
+                # Format as SSE message
+                sse_msg = SSEMessage(
+                    event="processing_update",
+                    data=event_data,
+                    id=str(int(event_data["timestamp"]))
+                )
+                
+                yield sse_msg.format()
+                
+                # Break if completed or failed
+                if event_data["status"] in ["completed", "failed"]:
+                    break
+                    
+            except asyncio.TimeoutError:
+                # Send timeout message and break
+                timeout_msg = SSEMessage(
+                    event="error",
+                    data={"error": "Processing timeout", "status": "failed"}
+                )
+                yield timeout_msg.format()
+                break
+                
+    except Exception as e:
+        # Send error message
+        error_msg = SSEMessage(
+            event="error",
+            data={"error": str(e), "status": "failed"}
+        )
+        yield error_msg.format()
+
+
+def create_heartbeat_generator(interval: int = 30) -> AsyncGenerator[str, None]:
+    """
+    Create a heartbeat generator for keeping SSE connection alive.
+    
+    Args:
+        interval: Heartbeat interval in seconds
+        
+    Yields:
+        Heartbeat SSE messages
+    """
+    async def heartbeat():
+        while True:
+            await asyncio.sleep(interval)
+            heartbeat_msg = SSEMessage(
+                event="heartbeat",
+                data={"timestamp": asyncio.get_event_loop().time()}
+            )
+            yield heartbeat_msg.format()
+    
+    return heartbeat()
+
+
+# Utility function to create SSE response headers
+def get_sse_headers() -> Dict[str, str]:
+    return {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "Access-Control-Allow-Origin": "*",  # Configure based on your CORS policy
+        "Access-Control-Allow-Headers": "Cache-Control"
+    } 

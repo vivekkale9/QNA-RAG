@@ -7,11 +7,24 @@ from .auth import (
     LLMConfigUpdate
 )
 
+from .document import (
+    DocumentCreate,
+    DocumentResponse,
+    DocumentUpdate,
+    ChunkResponse,
+    UploadResponse
+)
+
 __all__ = [
     "UserResponse",
     "UserCreate",
     "UserLogin",
     "UserUpdate",
     "PasswordUpdate",
-    "LLMConfigUpdate"
+    "LLMConfigUpdate",
+    "DocumentCreate",
+    "DocumentResponse",
+    "DocumentUpdate",
+    "ChunkResponse",
+    "UploadResponse"
 ]

@@ -7,10 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.routes import api_router
 from app.db import (
-    init_postgres_db, connect_to_postgres, disconnect_from_postgres
+    init_postgres_db, connect_to_postgres, disconnect_from_postgres,
+    init_mongodb_db, connect_to_mongodb, disconnect_from_mongodb,
+    MilvusVectorStore
 )
 from app.middlewares import (
-    AuthenticationMiddleware
+    AuthenticationMiddleware,
+    ErrorHandlerMiddleware
 )
 
 # Configure logging
@@ -20,6 +23,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+# Global vector store manager instance
+vector_store_manager: MilvusVectorStore = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,6 +37,14 @@ async def lifespan(app: FastAPI):
         await connect_to_postgres()
         await init_postgres_db()
         logger.info("✅ PostgreSQL initialized successfully")
+
+        await connect_to_mongodb()
+        await init_mongodb_db()
+        logger.info("✅ MongoDB initialized successfully")
+
+        vector_store_manager = MilvusVectorStore()
+        await vector_store_manager.initialize()
+        logger.info("✅ Vector store initialized successfully")
         logger.info("🚀 Application startup completed successfully")
         
     except Exception as e:
@@ -40,7 +54,12 @@ async def lifespan(app: FastAPI):
     yield
     
     try:
+        # Cleanup vector store
+        if vector_store_manager:
+            await vector_store_manager.cleanup()
+            
         await disconnect_from_postgres()
+        await disconnect_from_mongodb()
         logger.info("✅ Application shutdown completed successfully")
         
     except Exception as e:
@@ -61,6 +80,7 @@ app.add_middleware(
     allow_headers=["*"]
 )
 app.add_middleware(AuthenticationMiddleware)
+app.add_middleware(ErrorHandlerMiddleware)
 
 app.include_router(api_router)
 

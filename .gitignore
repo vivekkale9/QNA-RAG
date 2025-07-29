@@ -2,8 +2,16 @@
 .DS_Store
 .env
 __pycache__
+milvus_data
+minio_data
+etcd_data
 
 # Virtual environments
 venv/
 env/
 .venv/
+
+node_modules
+dist
+dist-ssr
+*.local
