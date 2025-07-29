@@ -112,6 +112,7 @@ class Conversation(BeanieDocument):
     title: str
     summary: Optional[str] = None
     conversation_metadata: Optional[Dict[str, Any]] = None
+    message_count: int = 0  # Track number of messages in this conversation
     
     # User association
     user_id: str  # Reference to PostgreSQL User.id

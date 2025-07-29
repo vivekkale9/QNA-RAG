@@ -356,6 +356,9 @@ class MilvusVectorStore:
             if doc_ids:
                 doc_id_filter = " or ".join([f'doc_id == "{doc_id}"' for doc_id in doc_ids])
                 expr += f" and ({doc_id_filter})"
+            
+            # Debug logging for search parameters
+            logger.info(f"Milvus search - Query: '{query[:50]}...', User: {user_id}, Expression: {expr}")
                 
             # Search parameters
             search_params = {
@@ -373,28 +376,33 @@ class MilvusVectorStore:
                 output_fields=["text", "user_id", "doc_id", "source", "chunk_index", "metadata"]
             )
             
+            # Debug logging for search results
+            logger.info(f"Milvus search returned {len(results[0]) if results and len(results) > 0 else 0} raw results")
+            
             # Process results
             chunks = []
-            for hit in results[0]:
-                # Check similarity threshold
-                if hit.score < similarity_threshold:
-                    continue
+            if results and len(results) > 0:
+                for hit in results[0]:
+                    # Check similarity threshold
+                    logger.debug(f"Hit score: {hit.score}, threshold: {similarity_threshold}")
+                    if hit.score < similarity_threshold:
+                        continue
                     
-                chunk_data = {
-                    "chunk_id": hit.id,
-                    "text": hit.entity.get("text"),
-                    "user_id": hit.entity.get("user_id"),
-                    "doc_id": hit.entity.get("doc_id"),
-                    "source": hit.entity.get("source"),
-                    "chunk_index": hit.entity.get("chunk_index"),
-                    "metadata": hit.entity.get("metadata", {}),
-                    "similarity_score": float(hit.score)
-                }
-                chunks.append(chunk_data)
-                
-                # Stop when we have enough results
-                if len(chunks) >= k:
-                    break
+                    chunk_data = {
+                        "chunk_id": hit.id,
+                        "text": hit.entity.get("text"),
+                        "user_id": hit.entity.get("user_id"),
+                        "doc_id": hit.entity.get("doc_id"),
+                        "source": hit.entity.get("source"),
+                        "chunk_index": hit.entity.get("chunk_index"),
+                        "metadata": hit.entity.get("metadata", {}),
+                        "similarity_score": float(hit.score)
+                    }
+                    chunks.append(chunk_data)
+                    
+                    # Stop when we have enough results
+                    if len(chunks) >= k:
+                        break
                     
             logger.info(f"Found {len(chunks)} similar chunks for user {user_id}")
             return chunks

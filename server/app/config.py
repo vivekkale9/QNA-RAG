@@ -7,6 +7,7 @@ Loads configuration from environment variables or .env file.
 
 import os
 from pydantic import BaseModel
+from typing import Optional, List
 from dotenv import load_dotenv
 from functools import lru_cache
 
@@ -63,6 +64,117 @@ class Settings(BaseModel):
     #Chunking Configuration
     chunk_size: int = int(os.getenv("CHUNK_SIZE", "300"))
     chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "50"))
+
+    # Individual Groq API keys for round-robin load balancing
+    groq_api_key_1: str = os.getenv("GROQ_API_KEY_1", "")
+    groq_api_key_2: str = os.getenv("GROQ_API_KEY_2", "")
+    groq_api_key_3: str = os.getenv("GROQ_API_KEY_3", "")
+    groq_api_key_4: str = os.getenv("GROQ_API_KEY_4", "")
+    groq_api_key_5: str = os.getenv("GROQ_API_KEY_5", "")
+    groq_api_key_6: str = os.getenv("GROQ_API_KEY_6", "")
+    groq_model: str = os.getenv("GROQ_MODEL", "")
+    groq_base_url: str = os.getenv("GROQ_BASE_URL", "")
+    groq_max_tokens: int = int(os.getenv("GROQ_MAX_TOKENS", ""))
+    groq_rate_limit_rpm: int = int(os.getenv("GROQ_RATE_LIMIT_RPM", ""))
+    groq_rate_limit_tpm: int = int(os.getenv("GROQ_RATE_LIMIT_TPM", ""))
+    
+    # Tenant Configuration
+    enable_tenant_llm_config: bool = os.getenv("ENABLE_TENANT_LLM_CONFIG", "true").lower() == "true"
+    enable_tenant_api_keys: bool = os.getenv("ENABLE_TENANT_API_KEYS", "true").lower() == "true"
+
+    @property
+    def groq_api_keys(self) -> List[str]:
+        keys = [
+            self.groq_api_key_1,
+            self.groq_api_key_2,
+            self.groq_api_key_3,
+            self.groq_api_key_4,
+            self.groq_api_key_5,
+            self.groq_api_key_6,
+        ]
+        # Filter out default values
+        return [key for key in keys if key and not key.startswith("your-groq-api-key")]
+    
+
+
+def get_tenant_llm_config(tenant_id: Optional[str] = None) -> dict:
+    """
+    Get LLM configuration for a specific tenant.
+    
+    Args:
+        tenant_id: Optional tenant identifier (user_id)
+        
+    Returns:
+        dict: LLM configuration for the tenant
+    """
+    settings = get_settings()
+    
+    # Default configuration (fallback)
+    default_config = {
+        "default_provider": "groq",
+        "groq": {
+            "api_keys": settings.groq_api_keys,
+            "model": settings.groq_model,
+            "base_url": settings.groq_base_url,
+            "max_tokens": settings.groq_max_tokens,
+            "rate_limit_rpm": settings.groq_rate_limit_rpm,
+            "rate_limit_tpm": settings.groq_rate_limit_tpm,
+        }
+    }
+    
+    # If no tenant_id provided or tenant configuration disabled, return default
+    if not tenant_id or not settings.enable_tenant_llm_config:
+        return default_config
+    
+    try:
+        # Import here to avoid circular imports
+        from .db.postgres import User, AsyncSessionLocal
+        from sqlalchemy import select
+        import asyncio
+        
+        async def get_user_llm_config():
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(select(User).where(User.id == tenant_id))
+                user = result.scalar_one_or_none()
+                
+                if not user:
+                    return default_config
+                
+                # If user has custom LLM configuration
+                if user.llm_provider and user.llm_config:
+                    custom_config = default_config.copy()
+                    
+                    # Override provider if specified
+                    if user.llm_provider in ["groq"]:
+                        custom_config["default_provider"] = user.llm_provider
+                    
+                    # Merge user's custom LLM config
+                    if isinstance(user.llm_config, dict):
+                        # Override specific provider settings
+                        if user.llm_provider in custom_config:
+                            custom_config[user.llm_provider].update(user.llm_config)
+                        else:
+                            # Add new provider config
+                            custom_config[user.llm_provider] = user.llm_config
+                    
+                    return custom_config
+                
+                return default_config
+        
+        # Run async function
+        try:
+            loop = asyncio.get_event_loop()
+            return loop.run_until_complete(get_user_llm_config())
+        except RuntimeError:
+            # If no event loop is running, create a new one
+            return asyncio.run(get_user_llm_config())
+            
+    except Exception as e:
+        # If any error occurs, fall back to default config
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Failed to get tenant LLM config for {tenant_id}: {e}")
+        return default_config
 
 
 @lru_cache()

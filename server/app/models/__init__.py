@@ -15,6 +15,14 @@ from .document import (
     UploadResponse
 )
 
+from .chat import (
+    ChatRequest,
+    ChatResponse,
+    MessageResponse,
+    SourceResponse,
+    ConversationResponse
+)
+
 __all__ = [
     "UserResponse",
     "UserCreate",
@@ -26,5 +34,10 @@ __all__ = [
     "DocumentResponse",
     "DocumentUpdate",
     "ChunkResponse",
-    "UploadResponse"
+    "UploadResponse",
+    "ChatRequest",
+    "ChatResponse",
+    "MessageResponse",
+    "SourceResponse",
+    "ConversationResponse"
 ]
