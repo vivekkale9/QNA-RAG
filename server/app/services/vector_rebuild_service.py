@@ -53,10 +53,19 @@ class VectorRebuildService:
             # Clear existing collection (rebuild from scratch)
             logger.info("Clearing existing vector store...")
             await self._clear_milvus_collection(vector_store)
-            await vector_store.initialize()  # Recreate collection
             
-            # Get chunks from MongoDB
-            logger.info("Fetching chunks from MongoDB backup...")
+            # Recreate collection with proper initialization
+            vector_store._initialized = False  # Force re-initialization
+            await vector_store.initialize()
+                        
+            # Test basic MongoDB connectivity
+            try:
+                test_count = await Chunk.count()
+            except Exception as conn_error:
+                error_msg = f"MongoDB connection test failed: {str(conn_error)}"
+                rebuild_stats["errors"].append(error_msg)
+                logger.error(error_msg, exc_info=True)
+                raise
             
             # Build query filters
             query_filter = {}
@@ -67,9 +76,15 @@ class VectorRebuildService:
                 query_filter["document_id"] = {"$in": doc_ids}
             elif document_filter:
                 query_filter["document_id"] = document_filter
+            else:
+                logger.info("No filters applied - processing all chunks")
+                
             
             # Count total chunks
-            total_chunks = await Chunk.count_documents(query_filter)
+            if query_filter:
+                total_chunks = await Chunk.find(query_filter).count()
+            else:
+                total_chunks = await Chunk.count()
             rebuild_stats["total_chunks"] = total_chunks
             
             if total_chunks == 0:
@@ -86,43 +101,65 @@ class VectorRebuildService:
             doc_chunks_batch = []
             
             # Stream chunks and group by document
-            async for chunk in Chunk.find(query_filter).sort("document_id", 1):
+            
+            try:                
+                chunk_query = Chunk.find(query_filter)
                 try:
-                    # If we're starting a new document, process the previous batch
-                    if current_doc_id and chunk.document_id != current_doc_id:
-                        if doc_chunks_batch:
+                    sorted_query = chunk_query.sort("document_id", 1)
+                except Exception as sort_error:
+                    logger.warning(f"Sort with integer failed: {sort_error}. Trying alternative...")
+                    try:
+                        # Try alternative sort format
+                        sorted_query = chunk_query.sort([("document_id", 1)])
+                    except Exception as sort_error2:
+                        logger.warning(f"Sort with list also failed: {sort_error2}. Using unsorted query...")
+                        sorted_query = chunk_query
+                
+                
+                async for chunk in sorted_query:
+                    try:
+                        
+                        # If we're starting a new document, process the previous batch
+                        if current_doc_id and chunk.document_id != current_doc_id:
+                            if doc_chunks_batch:
+                                await self._process_document_batch(
+                                    vector_store, 
+                                    current_doc_id, 
+                                    doc_chunks_batch, 
+                                    rebuild_stats
+                                )
+                                doc_chunks_batch = []
+                                rebuild_stats["processed_documents"] += 1
+                        
+                        current_doc_id = chunk.document_id
+                        doc_chunks_batch.append(chunk)
+                        
+                        # Process batch if it reaches batch_size
+                        if len(doc_chunks_batch) >= batch_size:
                             await self._process_document_batch(
                                 vector_store, 
                                 current_doc_id, 
-                                doc_chunks_batch, 
+                                doc_chunks_batch[:batch_size], 
                                 rebuild_stats
                             )
-                            doc_chunks_batch = []
-                            rebuild_stats["processed_documents"] += 1
+                            doc_chunks_batch = doc_chunks_batch[batch_size:]
+                            processed += batch_size
+                            
+                            # Log progress
+                            if processed % 100 == 0:  # More frequent logging
+                                logger.info(f"Processed {processed}/{total_chunks} chunks...")
                     
-                    current_doc_id = chunk.document_id
-                    doc_chunks_batch.append(chunk)
-                    
-                    # Process batch if it reaches batch_size
-                    if len(doc_chunks_batch) >= batch_size:
-                        await self._process_document_batch(
-                            vector_store, 
-                            current_doc_id, 
-                            doc_chunks_batch[:batch_size], 
-                            rebuild_stats
-                        )
-                        doc_chunks_batch = doc_chunks_batch[batch_size:]
-                        processed += batch_size
-                        
-                        # Log progress
-                        if processed % 1000 == 0:
-                            logger.info(f"Processed {processed}/{total_chunks} chunks...")
-                
-                except Exception as e:
-                    error_msg = f"Error processing chunk {chunk.id}: {str(e)}"
-                    rebuild_stats["errors"].append(error_msg)
-                    logger.error(error_msg)
+                    except Exception as e:
+                        error_msg = f"Error processing chunk {chunk.id}: {str(e)}"
+                        rebuild_stats["errors"].append(error_msg)
+                        logger.error(error_msg, exc_info=True)
             
+            except Exception as query_error:
+                error_msg = f"MongoDB query failed: {str(query_error)}"
+                rebuild_stats["errors"].append(error_msg)
+                logger.error(error_msg, exc_info=True)
+                raise
+                
             # Process remaining chunks
             if doc_chunks_batch:
                 await self._process_document_batch(
@@ -181,55 +218,97 @@ class VectorRebuildService:
     ):
         """Process a batch of chunks for a document."""
         try:
+            
             # Get document metadata
-            document = await Document.get(document_id)
-            if not document:
-                rebuild_stats["errors"].append(f"Document {document_id} not found")
+            try:
+                document = await Document.get(document_id)
+                if not document:
+                    rebuild_stats["errors"].append(f"Document {document_id} not found")
+                    return
+                logger.info(f"Found document: {document.filename} (user: {document.user_id})")
+            except Exception as e:
+                error_msg = f"Failed to get document {document_id}: {str(e)}"
+                rebuild_stats["errors"].append(error_msg)
+                logger.error(error_msg, exc_info=True)
                 return
             
             # Prepare chunk data for vector store
-            chunk_texts = []
-            chunk_metadata = []
-            
-            for chunk in chunks:
-                chunk_texts.append(chunk.content)
+            try:
+                chunk_texts = []
+                chunk_metadata = []
                 
-                # Prepare metadata
-                metadata = {
-                    "chunk_index": chunk.chunk_index,
-                    "mongo_chunk_id": str(chunk.id),
-                    "file_type": document.file_type,
-                    "char_count": len(chunk.content),
-                    "word_count": len(chunk.content.split()),
-                }
+                for i, chunk in enumerate(chunks):
+                    try:
+                        # Validate chunk content
+                        if not chunk.content or not isinstance(chunk.content, str):
+                            logger.warning(f"Invalid chunk content for chunk {chunk.id}")
+                            continue
+                            
+                        chunk_texts.append(chunk.content)
+                        
+                        # Prepare metadata - ensure all values are JSON-serializable
+                        metadata = {
+                            "mongo_chunk_id": str(chunk.id),
+                            "file_type": str(document.file_type),
+                            "char_count": len(chunk.content),
+                            "word_count": len(chunk.content.split()),
+                        }
+                        
+                        # Add chunk metadata if available (filter to ensure JSON compatibility)
+                        if chunk.chunk_metadata:
+                            for key, value in chunk.chunk_metadata.items():
+                                # Only add serializable values to avoid type errors
+                                if isinstance(value, (str, int, float, bool, list, dict)) and value is not None:
+                                    metadata[key] = value
+                        
+                        chunk_metadata.append(metadata)
+                        logger.debug(f"Prepared chunk {i+1}/{len(chunks)}: {len(chunk.content)} chars")
+                        
+                    except Exception as chunk_error:
+                        logger.error(f"Error preparing chunk {chunk.id}: {str(chunk_error)}", exc_info=True)
+                        continue
                 
-                # Add chunk metadata if available
-                if chunk.chunk_metadata:
-                    metadata.update(chunk.chunk_metadata)
+                if not chunk_texts:
+                    logger.warning(f"No valid chunks found for document {document.filename}")
+                    return
+                    
                 
-                chunk_metadata.append(metadata)
+            except Exception as e:
+                error_msg = f"Failed to prepare chunk data: {str(e)}"
+                rebuild_stats["errors"].append(error_msg)
+                logger.error(error_msg, exc_info=True)
+                return
             
             # Add chunks to vector store
-            await vector_store.add_document_chunks(
-                user_id=document.user_id,
-                doc_id=str(document.id),
-                source=document.filename,
-                chunks=chunk_texts,
-                chunk_metadata=chunk_metadata
-            )
-            
-            rebuild_stats["processed_chunks"] += len(chunks)
+            try:
+                
+                await vector_store.add_document_chunks(
+                    user_id=str(document.user_id),
+                    doc_id=str(document.id),
+                    source=str(document.filename),
+                    chunks=chunk_texts,
+                    chunk_metadata=chunk_metadata
+                )
+                
+                rebuild_stats["processed_chunks"] += len(chunk_texts)  # Use chunk_texts length, not chunks
+                logger.info(f"Successfully processed {len(chunk_texts)} chunks for document {document.filename}")
+                
+            except Exception as vector_error:
+                error_msg = f"Failed to add chunks to vector store for document {document.filename}: {str(vector_error)}"
+                rebuild_stats["errors"].append(error_msg)
+                logger.error(error_msg, exc_info=True)
+                raise  # Re-raise to get caught by outer exception handler
             
         except Exception as e:
             error_msg = f"Failed to process document {document_id}: {str(e)}"
             rebuild_stats["errors"].append(error_msg)
-            logger.error(error_msg)
+            logger.error(error_msg, exc_info=True)  # Include full traceback
     
     async def get_mongodb_backup_stats(self) -> Dict[str, Any]:
         """Get statistics about available backup data in MongoDB."""
         try:
-            total_documents = await Document.count_documents({})
-            total_chunks = await Chunk.count_documents({})
+            total_documents = await Document.count()
+            total_chunks = await Chunk.count()
             
             # Get user distribution
             user_pipeline = [

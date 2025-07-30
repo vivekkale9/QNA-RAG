@@ -8,7 +8,7 @@ from ..db.postgres import User
 from ..db.mongodb import Conversation, Message, MessageRole, QueryLog
 from ..models.chat import (
     ChatRequest, ChatResponse, ConversationResponse, MessageResponse, 
-    SourceResponse, MessageRole
+    SourceResponse
 )
 from ..llm.llm_manager import LLMManager
 from ..db.milvus_vector_store import MilvusVectorStore
@@ -159,7 +159,18 @@ class ChatService:
             
             # Update conversation metadata
             conversation.updated_at = datetime.now(timezone.utc)
-            conversation.message_count = (conversation.message_count or 0) + 2
+            previous_message_count = conversation.message_count or 0
+            conversation.message_count = previous_message_count + 2
+            
+            # Update conversation title to first user message if this is the first interaction
+            if previous_message_count == 0:
+                # Truncate message to reasonable title length
+                title = chat_request.message.strip()
+                if len(title) > 50:
+                    title = title[:47] + "..."
+                conversation.title = title
+                logger.info(f"Updated conversation title to: {title}")
+            
             await conversation.save()
             
             logger.info(f"Chat message processed for user {user_id}")
@@ -225,23 +236,24 @@ class ChatService:
             
             message_responses = [
                 MessageResponse(
-                    id=str(msg.id),
+                    id=hash(str(msg.id)) % (10**9),  # Convert ObjectId to int
                     role=msg.role,
                     content=msg.content,
+                    timestamp=msg.created_at,
                     sources=[SourceResponse(**source) for source in (msg.sources or [])],
-                    created_at=msg.created_at,
-                    tokens_used=msg.tokens_used,
-                    model_used=msg.model_used
+                    metadata=msg.message_metadata or {}
                 )
                 for msg in messages
             ]
             
             return ConversationResponse(
                 id=str(conversation.id),
+                user_id=hash(conversation.user_id) % (10**9),  # Convert string user_id to int
                 title=conversation.title,
-                messages=message_responses,
                 created_at=conversation.created_at,
-                updated_at=conversation.updated_at
+                updated_at=conversation.updated_at,
+                message_count=conversation.message_count or len(message_responses),
+                messages=message_responses
             )
             
         except HTTPException:
@@ -276,58 +288,96 @@ class ChatService:
             HTTPException: If user not found
         """
         try:
+            logger.info(f"Getting conversations for user: {user_id}")
+            
             # Verify user exists
             user = await self._get_user_by_id(db, user_id)
             if not user:
+                logger.error(f"User not found: {user_id}")
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="User not found"
                 )
             
+            logger.info(f"User verified: {user.email}")
+            
             # Get conversations from MongoDB
+            logger.info(f"Fetching conversations from MongoDB for user: {user_id}")
             conversations = await Conversation.find(
                 Conversation.user_id == user_id
             ).sort("-updated_at").skip(skip).limit(limit).to_list()
             
-            conversation_responses = []
-            for conv in conversations:
-                # Get recent messages for preview
-                recent_messages = await Message.find(
-                    Message.conversation_id == str(conv.id)
-                ).sort("-created_at").limit(5).to_list()
-                
-                message_responses = [
-                    MessageResponse(
-                        id=str(msg.id),
-                        role=msg.role,
-                        content=msg.content,
-                        sources=[SourceResponse(**source) for source in (msg.sources or [])],
-                        created_at=msg.created_at,
-                        tokens_used=msg.tokens_used,
-                        model_used=msg.model_used
-                    )
-                    for msg in reversed(recent_messages)
-                ]
-                
-                conversation_responses.append(
-                    ConversationResponse(
-                        id=str(conv.id),
-                        title=conv.title,
-                        messages=message_responses,
-                        created_at=conv.created_at,
-                        updated_at=conv.updated_at
-                    )
-                )
+            logger.info(f"Found {len(conversations)} conversations for user {user_id}")
             
+            conversation_responses = []
+            for i, conv in enumerate(conversations):
+                try:
+                    logger.info(f"Processing conversation {i+1}/{len(conversations)}: {conv.id}")
+                    
+                    # Get recent messages for preview
+                    recent_messages = await Message.find(
+                        Message.conversation_id == str(conv.id)
+                    ).sort("-created_at").limit(5).to_list()
+                    
+                    logger.info(f"Found {len(recent_messages)} messages for conversation {conv.id}")
+                    
+                    message_responses = []
+                    for j, msg in enumerate(reversed(recent_messages)):
+                        try:
+                            logger.info(f"Processing message {j+1}/{len(recent_messages)}: {msg.id}")
+                            
+                            # Process sources safely
+                            sources = []
+                            if msg.sources:
+                                for source in msg.sources:
+                                    try:
+                                        sources.append(SourceResponse(**source))
+                                    except Exception as source_error:
+                                        logger.warning(f"Failed to process source in message {msg.id}: {source_error}")
+                            
+                            message_response = MessageResponse(
+                                id=hash(str(msg.id)) % (10**9),  # Convert ObjectId to int
+                                role=msg.role,
+                                content=msg.content,
+                                timestamp=msg.created_at,
+                                sources=sources,
+                                metadata=msg.message_metadata or {}
+                            )
+                            message_responses.append(message_response)
+                            logger.info(f"Successfully processed message {msg.id}")
+                            
+                        except Exception as msg_error:
+                            logger.error(f"Failed to process message {msg.id}: {str(msg_error)}")
+                            # Continue with other messages instead of failing completely
+                            continue
+                    
+                    conversation_response = ConversationResponse(
+                        id=str(conv.id),
+                        user_id=hash(conv.user_id) % (10**9),  # Convert string user_id to int
+                        title=conv.title,
+                        created_at=conv.created_at,
+                        updated_at=conv.updated_at,
+                        message_count=conv.message_count or 0,
+                        messages=message_responses
+                    )
+                    conversation_responses.append(conversation_response)
+                    logger.info(f"Successfully processed conversation {conv.id}")
+                    
+                except Exception as conv_error:
+                    logger.error(f"Failed to process conversation {conv.id}: {str(conv_error)}")
+                    # Continue with other conversations instead of failing completely
+                    continue
+            
+            logger.info(f"Successfully processed {len(conversation_responses)} conversations for user {user_id}")
             return conversation_responses
             
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Get user conversations failed: {str(e)}")
+            logger.error(f"Get user conversations failed for user {user_id}: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to retrieve conversations"
+                detail=f"Failed to retrieve conversations: {str(e)}"
             )
     
     # Private helper methods

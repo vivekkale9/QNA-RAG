@@ -47,11 +47,23 @@ class UserSerivce:
                     detail="User not found"
                 )
             
+            # Calculate activity counts
+            from ..db.mongodb import get_mongodb_database
+            mongo_db = await get_mongodb_database()
+            
+            # Count documents uploaded by user
+            document_count = await mongo_db["documents"].count_documents({"user_id": user_id})
+            
+            # Count total queries made by user
+            query_count = await mongo_db["query_logs"].count_documents({"user_id": user_id})
+            
             return UserResponse(
                 id=str(user.id),
                 email=user.email,
                 role=user.role,
                 created_at=user.created_at,
+                document_count=document_count,
+                query_count=query_count
             )
             
         except HTTPException:
@@ -113,11 +125,23 @@ class UserSerivce:
             
             logger.info(f"Profile updated for user: {user.email}")
             
+            # Calculate activity counts
+            from ..db.mongodb import get_mongodb_database
+            mongo_db = await get_mongodb_database()
+            
+            # Count documents uploaded by user
+            document_count = await mongo_db["documents"].count_documents({"user_id": user_id})
+            
+            # Count total queries made by user
+            query_count = await mongo_db["query_logs"].count_documents({"user_id": user_id})
+            
             return UserResponse(
                 id=str(user.id),
                 email=user.email,
                 role=user.role,
                 created_at=user.created_at,
+                document_count=document_count,
+                query_count=query_count
             )
             
         except HTTPException:

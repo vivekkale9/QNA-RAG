@@ -13,45 +13,7 @@ class AdminVectorController:
     def __init__(self):
         self.rebuild_service = VectorRebuildService()
     
-    async def get_vector_health(self) -> Dict[str, Any]:
-        """
-        Get comprehensive health information about the vector store.
-        
-        Returns:
-            Dict containing health status, statistics, and diagnostics
-        """
-        try:
-            # Initialize vector store
-            vector_store = MilvusVectorStore()
-            await vector_store.initialize()
-            
-            # Get health check
-            health_info = await vector_store.health_check()
-            
-            # Get detailed statistics if healthy
-            detailed_stats = {}
-            if health_info["status"] in ["healthy", "degraded"]:
-                try:
-                    detailed_stats = await vector_store.get_detailed_statistics()
-                except Exception as e:
-                    health_info["errors"].append(f"Stats error: {str(e)}")
-            
-            # Get MongoDB backup information
-            backup_stats = await self.rebuild_service.get_mongodb_backup_stats()
-            
-            return {
-                "vector_store": health_info,
-                "detailed_statistics": detailed_stats,
-                "backup_availability": backup_stats
-            }
-            
-        except Exception as e:
-            logger.error(f"Health check failed: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Health check failed: {str(e)}"
-            )
-    
+
     async def rebuild_vector_store(
         self,
         user_filter: str = None,
@@ -101,4 +63,6 @@ class AdminVectorController:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to get backup statistics: {str(e)}"
-            ) 
+            )
+    
+ 

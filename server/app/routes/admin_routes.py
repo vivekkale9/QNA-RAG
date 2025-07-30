@@ -8,24 +8,6 @@ router = APIRouter(prefix="/admin/vector", tags=["Admin Vector Store"])
 admin_vector_controller = AdminVectorController()
 
 
-@router.get("/health")
-async def get_vector_store_health(
-    _: dict = Depends(require_role("admin"))
-):
-    """
-    Get comprehensive health information about the vector store.
-    
-    **Admin Only**
-    
-    Returns detailed information about:
-    - Milvus connection status
-    - Collection status and statistics  
-    - Data consistency with MongoDB backup
-    - Performance metrics
-    - Error diagnostics
-    """
-    return await admin_vector_controller.get_vector_health()
-
 
 @router.post("/rebuild")
 async def rebuild_vector_store(

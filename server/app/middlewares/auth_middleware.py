@@ -119,6 +119,12 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         """
         start_time = time.time()
         
+        # Allow OPTIONS requests (CORS preflight) without authentication
+        if request.method == "OPTIONS":
+            response = await call_next(request)
+            self._add_security_headers(response)
+            return response
+        
         # Get client IP
         client_ip = self._get_client_ip(request)
         

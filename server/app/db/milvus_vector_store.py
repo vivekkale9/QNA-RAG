@@ -284,37 +284,93 @@ class MilvusVectorStore:
             embedding_list = []
             
             for i, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
+                # Create chunk_id and ensure it doesn't exceed VARCHAR limit (100 chars)
                 chunk_id = f"{doc_id}_{i}"
+                if len(chunk_id) > 100:
+                    # Truncate doc_id if necessary to fit the limit
+                    max_doc_id_len = 100 - len(f"_{i}") - 1
+                    truncated_doc_id = doc_id[:max_doc_id_len] if len(doc_id) > max_doc_id_len else doc_id
+                    chunk_id = f"{truncated_doc_id}_{i}"
+                    
                 chunk_ids.append(chunk_id)
-                texts.append(chunk_text)
-                user_ids.append(user_id)
-                doc_ids.append(doc_id)
-                sources.append(source)
-                chunk_indices.append(i)
                 
-                # Prepare metadata
-                metadata = chunk_metadata[i] if chunk_metadata and i < len(chunk_metadata) else {}
-                metadata.update({
+                # Ensure text doesn't exceed VARCHAR limit (65535 chars)
+                if len(chunk_text) > 65535:
+                    truncated_text = chunk_text[:65532] + "..."
+                    logger.warning(f"Truncated chunk text from {len(chunk_text)} to 65535 chars")
+                    texts.append(truncated_text)
+                else:
+                    texts.append(chunk_text)
+                user_ids.append(str(user_id))  # Ensure string type
+                doc_ids.append(str(doc_id))    # Ensure string type
+                sources.append(str(source))    # Ensure string type
+                chunk_indices.append(int(i))   # Ensure INT64 type
+                
+                # Prepare metadata - ensure JSON serializable
+                base_metadata = chunk_metadata[i] if chunk_metadata and i < len(chunk_metadata) else {}
+                
+                # Create clean metadata dict with only JSON-compatible values
+                clean_metadata = {}
+                if isinstance(base_metadata, dict):
+                    for key, value in base_metadata.items():
+                        if isinstance(value, (str, int, float, bool, list, dict)) and value is not None:
+                            clean_metadata[key] = value
+                
+                # Add additional metadata
+                clean_metadata.update({
                     "word_count": len(chunk_text.split()),
                     "char_count": len(chunk_text)
                 })
-                metadatas.append(metadata)
+                
+                metadatas.append(clean_metadata)
                 embedding_list.append(embedding.tolist())
                 
             # Insert data into Milvus
-            data = [
-                chunk_ids,      # chunk_id (primary key)
-                embedding_list, # embedding (vector)
-                texts,          # text
-                user_ids,       # user_id
-                doc_ids,        # doc_id
-                sources,        # source
-                chunk_indices,  # chunk_index
-                metadatas       # metadata
-            ]
-            
-            self.collection.insert(data)
-            self.collection.flush()  # Ensure data is persisted
+            try:
+                data = [
+                    chunk_ids,      # chunk_id (primary key)
+                    embedding_list, # embedding (vector)
+                    texts,          # text
+                    user_ids,       # user_id
+                    doc_ids,        # doc_id
+                    sources,        # source
+                    chunk_indices,  # chunk_index
+                    metadatas       # metadata
+                ]
+                
+                # Log data types for debugging
+                logger.debug(f"Data types for insertion:")
+                logger.debug(f"  chunk_ids: {type(chunk_ids[0]) if chunk_ids else 'empty'} (count: {len(chunk_ids)})")
+                logger.debug(f"  embeddings: {type(embedding_list[0]) if embedding_list else 'empty'} (count: {len(embedding_list)})")
+                logger.debug(f"  texts: {type(texts[0]) if texts else 'empty'} (count: {len(texts)})")
+                logger.debug(f"  user_ids: {type(user_ids[0]) if user_ids else 'empty'} (count: {len(user_ids)})")
+                logger.debug(f"  doc_ids: {type(doc_ids[0]) if doc_ids else 'empty'} (count: {len(doc_ids)})")
+                logger.debug(f"  sources: {type(sources[0]) if sources else 'empty'} (count: {len(sources)})")
+                logger.debug(f"  chunk_indices: {type(chunk_indices[0]) if chunk_indices else 'empty'} (count: {len(chunk_indices)})")
+                logger.debug(f"  metadatas: {type(metadatas[0]) if metadatas else 'empty'} (count: {len(metadatas)})")
+                
+                # Validate all arrays have same length
+                lengths = [len(chunk_ids), len(embedding_list), len(texts), len(user_ids), len(doc_ids), len(sources), len(chunk_indices), len(metadatas)]
+                if len(set(lengths)) > 1:
+                    raise ValueError(f"Array length mismatch: {lengths}")
+                
+                logger.info(f"Inserting {len(chunk_ids)} chunks into Milvus...")
+                self.collection.insert(data)
+                self.collection.flush()  # Ensure data is persisted
+                logger.info("Successfully inserted and flushed data to Milvus")
+                
+            except Exception as insert_error:
+                logger.error(f"Milvus insertion failed: {str(insert_error)}", exc_info=True)
+                logger.error(f"Sample data for debugging:")
+                if chunk_ids:
+                    logger.error(f"  First chunk_id: {chunk_ids[0]} ({type(chunk_ids[0])})")
+                if user_ids:
+                    logger.error(f"  First user_id: {user_ids[0]} ({type(user_ids[0])})")
+                if doc_ids:
+                    logger.error(f"  First doc_id: {doc_ids[0]} ({type(doc_ids[0])})")
+                if metadatas:
+                    logger.error(f"  First metadata: {metadatas[0]} ({type(metadatas[0])})")
+                raise
             
             logger.info(f"Inserted {len(chunks)} chunks for document {doc_id}")
             return chunk_ids
@@ -457,100 +513,15 @@ class MilvusVectorStore:
                 "model_name": self.model_name,
                 "index_type": settings.milvus_index_type,
                 "metric_type": settings.milvus_metric_type,
+                "unique_users": 0,  # Placeholder - will be calculated elsewhere
+                "unique_documents": 0,  # Placeholder - will be calculated elsewhere
                 "raw_stats": stats
             }
         except Exception as e:
             logger.error(f"Failed to get collection stats: {str(e)}")
             return {}
             
-    async def health_check(self) -> Dict[str, Any]:
-        """
-        Comprehensive health check for Milvus vector store.
-        
-        Returns:
-            Dict containing detailed health information
-        """
-        health_info = {
-            "status": "unknown",
-            "milvus_connection": False,
-            "collection_exists": False,
-            "collection_loaded": False,
-            "total_entities": 0,
-            "unique_users": 0,
-            "unique_documents": 0,
-            "index_status": "unknown",
-            "disk_usage": "unknown",
-            "last_insert": "unknown",
-            "errors": []
-        }
-        
-        try:
-            # Check Milvus connection
-            try:
-                connections.get_connection(alias="default")
-                health_info["milvus_connection"] = True
-            except Exception as e:
-                health_info["errors"].append(f"Connection error: {str(e)}")
-                health_info["status"] = "critical"
-                return health_info
-            
-            # Check collection existence
-            try:
-                health_info["collection_exists"] = utility.has_collection(self.collection_name)
-                if not health_info["collection_exists"]:
-                    health_info["errors"].append("Collection does not exist")
-                    health_info["status"] = "critical"
-                    return health_info
-            except Exception as e:
-                health_info["errors"].append(f"Collection check error: {str(e)}")
-                health_info["status"] = "critical"
-                return health_info
-            
-            # Get collection and check if loaded
-            try:
-                collection = Collection(self.collection_name)
-                health_info["collection_loaded"] = collection.is_loaded
-                
-                if not health_info["collection_loaded"]:
-                    health_info["errors"].append("Collection not loaded in memory")
-                    health_info["status"] = "degraded"
-            except Exception as e:
-                health_info["errors"].append(f"Collection load check error: {str(e)}")
-                health_info["status"] = "degraded"
-            
-            # Get entity statistics
-            try:
-                stats = await self.get_collection_stats()
-                health_info.update(stats)
-            except Exception as e:
-                health_info["errors"].append(f"Stats error: {str(e)}")
-            
-            # Check index status
-            try:
-                collection = Collection(self.collection_name)
-                indexes = collection.indexes
-                if indexes:
-                    index_info = collection.index()
-                    health_info["index_status"] = "built"
-                    health_info["index_type"] = index_info.params.get("index_type", "unknown")
-                else:
-                    health_info["index_status"] = "missing"
-                    health_info["errors"].append("No indexes found")
-            except Exception as e:
-                health_info["errors"].append(f"Index check error: {str(e)}")
-                health_info["index_status"] = "error"
-            
-            # Overall status determination
-            if not health_info["errors"]:
-                health_info["status"] = "healthy"
-            elif health_info["status"] == "unknown":
-                health_info["status"] = "degraded"
-                
-        except Exception as e:
-            health_info["errors"].append(f"Health check error: {str(e)}")
-            health_info["status"] = "critical"
-        
-        return health_info
+
     
     async def get_detailed_statistics(self) -> Dict[str, Any]:
         """
@@ -607,7 +578,9 @@ class MilvusVectorStore:
                     "sample_documents": len(doc_stats),
                     "top_documents": sorted(doc_stats.items(), key=lambda x: x[1], reverse=True)[:10]
                 },
-                "average_chunks_per_document": round(stats["total_entities"] / max(stats["unique_documents"], 1), 2) if stats["unique_documents"] > 0 else 0
+                "average_chunks_per_document": round(stats.get("total_entities", 0) / max(len(doc_stats), 1), 2) if len(doc_stats) > 0 else 0,
+                "unique_users": len(user_stats),
+                "unique_documents": len(doc_stats)
             }
             
         except Exception as e:

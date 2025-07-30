@@ -7,6 +7,7 @@ between routes and services.
 
 from typing import List, Optional
 from fastapi import HTTPException, status
+import logging
 
 from ..services import ChatService
 from ..models import ChatRequest, ChatResponse, ConversationResponse
@@ -74,13 +75,30 @@ class ChatController:
         Returns:
             List[ConversationResponse]: User's conversations
         """
-        conversations = await self.chat_service.get_user_conversations(
-            user_id=user_id,
-            skip=skip,
-            limit=limit,
-            db_session=db_session
-        )
-        return [ConversationResponse.model_validate(conv) for conv in conversations]
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        try:
+            logger.info(f"ChatController: Getting conversations for user {user_id}")
+            
+            conversations = await self.chat_service.get_user_conversations(
+                user_id=user_id,
+                skip=skip,
+                limit=limit,
+                db=db_session
+            )
+            
+            logger.info(f"ChatController: Got {len(conversations)} conversations from service")
+            
+            # The service already returns ConversationResponse objects, no need to validate again
+            return conversations
+            
+        except Exception as e:
+            logger.error(f"ChatController: Error getting conversations for user {user_id}: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Controller error: {str(e)}"
+            )
     
     async def get_conversation(
         self, 
@@ -102,7 +120,7 @@ class ChatController:
         conversation = await self.chat_service.get_conversation_history(
             conversation_id=conversation_id,
             user_id=user_id,
-            db_session=db_session
+            db=db_session
         )
         
         if not conversation:
