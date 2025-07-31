@@ -6,12 +6,82 @@ from pymilvus import (
     connections, Collection, CollectionSchema, FieldSchema, DataType,
     utility
 )
-from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer, AutoModel
+import torch
 
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+class OptimizedEmbeddingModel:
+    """
+    Memory-optimized embedding model using transformers directly.
+    Uses less memory than sentence-transformers library.
+    """
+    
+    def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2"):
+        self.model_name = model_name
+        self.tokenizer = None
+        self.model = None
+        self.device = "cpu"  # Force CPU to save memory
+        
+    def _load_model(self):
+        """Lazy load model only when needed"""
+        if self.tokenizer is None:
+            logger.info(f"🔄 Loading tokenizer: {self.model_name}")
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            
+        if self.model is None:
+            logger.info(f"🔄 Loading model: {self.model_name}")
+            self.model = AutoModel.from_pretrained(
+                self.model_name,
+                torch_dtype=torch.float32,  # Use float32 for better compatibility
+                device_map=None  # Force CPU
+            )
+            self.model.to(self.device)
+            self.model.eval()  # Set to evaluation mode
+            
+    def embed_texts(self, texts: List[str]) -> np.ndarray:
+        """Generate embeddings for a list of texts"""
+        self._load_model()
+        
+        # Tokenize inputs
+        inputs = self.tokenizer(
+            texts, 
+            return_tensors='pt', 
+            padding=True, 
+            truncation=True, 
+            max_length=512
+        )
+        
+        # Move to device
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        
+        # Generate embeddings
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            # Use mean pooling instead of CLS token for better sentence representation
+            embeddings = self._mean_pooling(outputs.last_hidden_state, inputs['attention_mask'])
+            # Normalize embeddings
+            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+            
+        return embeddings.cpu().numpy()
+    
+    def embed_text(self, text: str) -> np.ndarray:
+        """Generate embedding for a single text"""
+        return self.embed_texts([text])[0]
+    
+    def _mean_pooling(self, hidden_states, attention_mask):
+        """Apply mean pooling to get sentence embeddings"""
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(hidden_states.size()).float()
+        return torch.sum(hidden_states * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+    
+    def get_sentence_embedding_dimension(self) -> int:
+        """Get the embedding dimension"""
+        self._load_model()
+        return self.model.config.hidden_size
 
 
 class MilvusVectorStore:
@@ -87,18 +157,23 @@ class MilvusVectorStore:
             
     async def _load_embedding_model(self) -> None:
         try:
-            self.embedding_model = await asyncio.get_event_loop().run_in_executor(
-                None, SentenceTransformer, self.model_name
+            # Use optimized embedding model
+            self.embedding_model = OptimizedEmbeddingModel(self.model_name)
+            
+            # Load model in executor to avoid blocking
+            await asyncio.get_event_loop().run_in_executor(
+                None, self.embedding_model._load_model
             )
+            
             # Verify embedding dimension
             actual_dim = self.embedding_model.get_sentence_embedding_dimension()
             if actual_dim != self.embedding_dimension:
                 logger.warning(f"Embedding dimension mismatch: expected {self.embedding_dimension}, got {actual_dim}")
                 self.embedding_dimension = actual_dim
                 
-            logger.info(f"Loaded embedding model: {self.model_name} (dim: {self.embedding_dimension})")
+            logger.info(f"✅ Loaded optimized embedding model: {self.model_name} (dim: {self.embedding_dimension})")
         except Exception as e:
-            logger.error(f"Failed to load embedding model: {str(e)}")
+            logger.error(f"❌ Failed to load embedding model: {str(e)}")
             raise
             
     async def _setup_collection(self) -> None:
@@ -220,13 +295,12 @@ class MilvusVectorStore:
             await self.initialize()
             
         try:
-            # Generate embedding
+            # Generate embedding using optimized model
             embedding = await asyncio.get_event_loop().run_in_executor(
-                None, self.embedding_model.encode, text
+                None, self.embedding_model.embed_text, text
             )
             
-            # Normalize for cosine similarity
-            embedding = embedding / np.linalg.norm(embedding)
+            # Already normalized in the optimized model
             return embedding.astype(np.float32)
             
         except Exception as e:
@@ -247,14 +321,12 @@ class MilvusVectorStore:
             await self.initialize()
             
         try:
-            # Generate embeddings in batches
+            # Generate embeddings using optimized model
             embeddings = await asyncio.get_event_loop().run_in_executor(
-                None, self.embedding_model.encode, texts
+                None, self.embedding_model.embed_texts, texts
             )
             
-            # Normalize for cosine similarity
-            norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-            embeddings = embeddings / norms
+            # Already normalized in the optimized model
             return embeddings.astype(np.float32)
             
         except Exception as e:
