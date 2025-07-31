@@ -63,7 +63,7 @@ class Settings(BaseModel):
         return bool(self.milvus_token and self.milvus_host)
 
     # Embedding Configuration
-    embedding_model: str = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L3-v2")
+    embedding_model: str = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-MiniLM-L3-v2")
     embedding_dimension: int = int(os.getenv("EMBEDDING_DIMENSION", "384"))
 
     #Chunking Configuration
