@@ -21,7 +21,7 @@ class OptimizedEmbeddingModel:
     Uses less memory than sentence-transformers library.
     """
     
-    def __init__(self, model_name="sentence-transformers/all-MiniLM-L6-v2"):
+    def __init__(self, model_name="sentence-transformers/all-MiniLM-L3-v2"):
         self.model_name = model_name
         self.tokenizer = None
         self.model = None

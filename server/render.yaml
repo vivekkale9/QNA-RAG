@@ -67,7 +67,7 @@ services:
         value: 6000
       # Embedding Configuration
       - key: EMBEDDING_MODEL
-        value: sentence-transformers/all-MiniLM-L6-v2
+        value: sentence-transformers/all-MiniLM-L3-v2
       - key: EMBEDDING_DIMENSION
         value: 384
       # Chunking Configuration
