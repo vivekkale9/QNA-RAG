@@ -23,8 +23,8 @@ aiofiles==23.2.1
 # ML/Vector dependencies (optimized versions)
 numpy==1.26.4
 sentence-transformers==2.3.0
-pymilvus==2.3.4
-marshmallow==3.21.3
+pymilvus==2.5.7
+protobuf>=3.20.0
 
 # MongoDB
 motor==3.3.2
