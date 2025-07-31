@@ -81,7 +81,10 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173", 
         "http://127.0.0.1:8080"
-    ] if settings.environment == "development" else ["https://your-production-domain.com"],
+    ] if settings.environment == "development" else [
+        "https://*.vercel.app",  # Vercel deployments
+        "https://your-custom-domain.com"  # Your custom domain if any
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
@@ -102,6 +105,20 @@ async def root():
     return {
         "message": "Welcome to DocuChat AI",
         "description": "AI-powered document chat with RAG capabilities",
+        "version": "1.0.0"
+    }
+
+@app.get("/health")
+async def health_check():
+    """
+    Health check endpoint for monitoring and deployment.
+    
+    Returns:
+        dict: Health status information
+    """
+    return {
+        "status": "healthy",
+        "environment": settings.environment,
         "version": "1.0.0"
     }
 

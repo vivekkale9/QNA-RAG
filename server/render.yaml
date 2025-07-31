@@ -1,0 +1,86 @@
+services:
+  - type: web
+    name: qna-rag-backend
+    env: python
+    region: oregon
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: |
+      ./scripts/start-milvus.sh &
+      sleep 45
+      uvicorn main:app --host 0.0.0.0 --port $PORT
+    disk:
+      name: milvus-data
+      mountPath: /opt/render/project/src/docker-volumes
+      sizeGB: 10
+    dockerCommand: |
+      apt-get update && apt-get install -y docker.io docker-compose-plugin curl
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: PYTHONPATH
+        value: /opt/render/project/src
+      - key: ENVIRONMENT
+        value: production
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: API_PORT
+        sync: false
+        value: $PORT
+      - key: DEBUG
+        value: false
+      # Database URLs - these need to be set in Render dashboard
+      - key: POSTGRES_HOST
+        sync: false
+      - key: POSTGRES_USER
+        sync: false
+      - key: POSTGRES_PASSWORD
+        sync: false
+      - key: POSTGRES_DB
+        sync: false
+      - key: MONGO_HOST
+        sync: false
+      - key: MONGO_USER
+        sync: false
+      - key: MONGO_PASSWORD
+        sync: false
+      - key: MONGO_DB
+        sync: false
+      # Local Milvus Configuration
+      - key: MILVUS_HOST
+        value: localhost
+      - key: MILVUS_PORT
+        value: 19530
+      # Security
+      - key: SECRET_KEY
+        sync: false
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 30
+      - key: REFRESH_TOKEN_EXPIRE_DAYS
+        value: 7
+      # LLM Configuration
+      - key: GROQ_API_KEY_1
+        sync: false
+      - key: GROQ_MODEL
+        value: llama3-8b-8192
+      - key: GROQ_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: GROQ_MAX_TOKENS
+        value: 4000
+      - key: GROQ_RATE_LIMIT_RPM
+        value: 30
+      - key: GROQ_RATE_LIMIT_TPM
+        value: 6000
+      # Embedding Configuration
+      - key: EMBEDDING_MODEL
+        value: sentence-transformers/all-MiniLM-L6-v2
+      - key: EMBEDDING_DIMENSION
+        value: 384
+      # Chunking Configuration
+      - key: CHUNK_SIZE
+        value: 300
+      - key: CHUNK_OVERLAP
+        value: 50
+    healthCheckPath: /health 
