@@ -12,6 +12,7 @@ import logging
 from ..services import ChatService
 from ..models import ChatRequest, ChatResponse, ConversationResponse
 from ..db import MilvusVectorStore
+from main import get_vector_store
 
 
 class ChatController:
@@ -36,9 +37,8 @@ class ChatController:
         Returns:
             ChatResponse: Chat response with answer and sources
         """
-        # Get vector store manager
-        vector_manager = MilvusVectorStore()
-        await vector_manager.initialize()
+        # Get vector store with lazy initialization
+        vector_manager = await get_vector_store()
         
         try:
             response = await self.chat_service.process_chat_message(

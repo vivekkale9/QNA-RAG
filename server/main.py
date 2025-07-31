@@ -27,6 +27,19 @@ settings = get_settings()
 # Global vector store manager instance
 vector_store_manager: MilvusVectorStore = None
 
+async def get_vector_store() -> MilvusVectorStore:
+    """
+    Get vector store instance with lazy initialization.
+    This saves memory during startup by only initializing when needed.
+    """
+    global vector_store_manager
+    if vector_store_manager is None:
+        logger.info("🔄 Initializing vector store on first use...")
+        vector_store_manager = MilvusVectorStore()
+        await vector_store_manager.initialize()
+        logger.info("✅ Vector store initialized successfully")
+    return vector_store_manager
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -42,9 +55,10 @@ async def lifespan(app: FastAPI):
         await init_mongodb_db()
         logger.info("✅ MongoDB initialized successfully")
 
-        vector_store_manager = MilvusVectorStore()
-        await vector_store_manager.initialize()
-        logger.info("✅ Vector store initialized successfully")
+        # Initialize vector store lazily to save memory during startup
+        global vector_store_manager
+        vector_store_manager = None  # Will be initialized on first use
+        logger.info("✅ Vector store will be initialized on first request")
         logger.info("🚀 Application startup completed successfully")
         
     except Exception as e:

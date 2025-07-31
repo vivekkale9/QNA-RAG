@@ -10,6 +10,7 @@ from ..utils.sse import get_sse_headers, create_sse_generator, DocumentProcessin
 from ..services import DocumentService
 from ..models import DocumentResponse
 from ..controllers import UploadController
+from main import get_vector_store
 
 router = APIRouter(prefix="/upload", tags=["Document Upload"])
 document_service = DocumentService()
@@ -38,9 +39,8 @@ async def upload_document_stream(
     # Create event emitter for progress updates
     event_emitter = DocumentProcessingEventEmitter()
     
-    # Initialize vector store
-    vector_store = MilvusVectorStore()
-    await vector_store.initialize()
+    # Get vector store with lazy initialization
+    vector_store = await get_vector_store()
     
     async def process_document():
         try:

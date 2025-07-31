@@ -4,6 +4,7 @@ from fastapi import HTTPException, UploadFile, status
 from ..services import DocumentService
 from ..models import DocumentResponse
 from ..db import MilvusVectorStore
+from main import get_vector_store
 
 class UploadController:
     
@@ -85,9 +86,8 @@ class UploadController:
         Returns:
             dict: Deletion confirmation
         """
-        # Get vector store manager
-        vector_manager = MilvusVectorStore()
-        await vector_manager.initialize()
+        # Get vector store with lazy initialization
+        vector_manager = await get_vector_store()
         
         result = await self.document_service.delete_document(
             document_id=document_id,
