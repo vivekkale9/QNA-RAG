@@ -4,7 +4,7 @@ A modern Question & Answer system built with Retrieval-Augmented Generation (RAG
 
 ---
 
-## 🚀 Key Features
+## ✨ Key Features
 
 * **Document Upload & Processing**: Seamless PDF ingestion with intelligent text extraction (via PyMuPDF), dynamic chunking, and embedding generation.
 * **Contextual Q\&A**: Real-time conversational interface powered by Groq LLM inference and vector similarity search.
@@ -33,7 +33,6 @@ A modern Question & Answer system built with Retrieval-Augmented Generation (RAG
 ### Embeddings & AI
 
 * **Sentence-Transformers (all-MiniLM-L6-v2)**: This model offers a strong trade-off between performance and efficiency. It produces compact 384-dimensional embeddings that are sufficiently expressive for semantic search without overloading memory, unlike larger transformer models.
-Compared to alternatives like OpenAI embeddings or larger BERT variants, all-MiniLM-L6-v2 is open-source, faster to load locally, and better suited for resource-constrained deployments.
 * **Groq API**: Along with Groq's meta-llama/llama-4-maverick-17b-128e-instruct ultra-fast responses, round-robin key management enables horizontal scaling of LLM inference without overloading a single API key provider.
 * **PyMuPDF**: Lightweight, high-performance library for extracting text and metadata from PDFs, ensuring reliable chunk boundaries and minimal OCR overhead.
 
@@ -62,7 +61,7 @@ Compared to alternatives like OpenAI embeddings or larger BERT variants, all-Min
 
 ## 📁 Project Structure
 
-```
+```bash
 QNA_RAG/
 ├── frontend/                 # React app
 │   ├── src/
@@ -96,17 +95,11 @@ QNA_RAG/
 
 2. **Environment Configuration**
 
-   * Copy `.env.example` to `.env` in both frontend and server directories.
    * Populate credentials for PostgreSQL, MongoDB, Milvus, Groq, and JWT settings.
 
 3. **Local Services**
 
    * Start PostgreSQL, MongoDB, and Milvus (or use Zilliz Cloud).
-   * Apply migrations and seed initial data:
-
-     ```bash
-     alembic upgrade head
-     ```
 
 4. **Run Services**
 
@@ -114,9 +107,75 @@ QNA_RAG/
    * Frontend: `npm run dev --prefix ../frontend`
 
    The application will be available at:
-    - **Frontend**: http://localhost:5173
-    - **Backend API**: http://localhost:8000
-    - **API Documentation**: http://localhost:8000/docs
+
+   * **Frontend**: [http://localhost:5173](http://localhost:5173)
+   * **Backend API**: [http://localhost:8000](http://localhost:8000)
+   * **API Documentation**: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+---
+
+## 🔐 Environment Variables
+
+```env
+# FastAPI Core
+API_HOST=0.0.0.0
+API_PORT=8000
+LOG_LEVEL=INFO
+ENVIRONMENT=development
+DEBUG=true
+
+# PostgreSQL Configuration
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=e5000862
+POSTGRES_DB=rag
+
+# MongoDB Configuration
+MONGO_HOST=learningmongo.cr2lsf3.mongodb.net
+MONGO_USER=root
+MONGO_PASSWORD=root
+MONGO_DB=rag
+
+# JWT Auth
+SECRET_KEY=fc9Ffaxu7PBUblKtHizSijlfiLBYeS2N
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+REFRESH_TOKEN_EXPIRE_DAYS=7
+
+# Embedding Settings
+EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+EMBEDDING_DIMENSION=384
+CHUNK_SIZE=300
+CHUNK_OVERLAP=50
+
+# Milvus Configuration
+MILVUS_HOST=https://in03-864c32257795e7c.serverless.aws-eu-central-1.cloud.zilliz.com
+MILVUS_PORT=19530
+MILVUS_TOKEN=a4d4d8a3fee50837b11afc80a4bd3dd5bc9b4dead1ab9ba1a4563cf8de880ee0ab640b892553d0468848c895ff717fb249f9fa8f
+MILVUS_COLLECTION_NAME=insurance_chunks
+MILVUS_INDEX_TYPE=IVF_FLAT
+MILVUS_METRIC_TYPE=COSINE
+MILVUS_NLIST=128
+
+# Groq API Keys (Round Robin)
+GROQ_API_KEY_1=...
+GROQ_API_KEY_2=...
+GROQ_API_KEY_3=...
+GROQ_API_KEY_4=...
+GROQ_API_KEY_5=...
+GROQ_API_KEY_6=...
+
+# Groq Model & Throttling
+GROQ_MODEL=meta-llama/llama-4-maverick-17b-128e-instruct
+GROQ_BASE_URL=https://api.groq.com
+GROQ_MAX_TOKENS=8192
+GROQ_RATE_LIMIT_RPM=30
+GROQ_RATE_LIMIT_TPM=6000
+
+# Feature Toggles
+ENABLE_TENANT_LLM_CONFIG=true
+ENABLE_TENANT_API_KEYS=true
+```
 
 ---
 
@@ -124,7 +183,6 @@ QNA_RAG/
 
 * **Backend**: `pytest --cov=app`
 * **Frontend**: `npm test --prefix frontend`
-* **Coverage Goals**: Aim for 90%+ backend coverage; critical paths tested.
 
 ---
 
