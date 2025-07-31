@@ -11,8 +11,7 @@ import logging
 
 from ..services import ChatService
 from ..models import ChatRequest, ChatResponse, ConversationResponse
-from ..db import MilvusVectorStore
-from main import get_vector_store
+from ..dependencies import get_vector_store
 
 
 class ChatController:

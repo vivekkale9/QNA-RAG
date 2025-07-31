@@ -24,21 +24,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# Global vector store manager instance
-vector_store_manager: MilvusVectorStore = None
-
-async def get_vector_store() -> MilvusVectorStore:
-    """
-    Get vector store instance with lazy initialization.
-    This saves memory during startup by only initializing when needed.
-    """
-    global vector_store_manager
-    if vector_store_manager is None:
-        logger.info("🔄 Initializing vector store on first use...")
-        vector_store_manager = MilvusVectorStore()
-        await vector_store_manager.initialize()
-        logger.info("✅ Vector store initialized successfully")
-    return vector_store_manager
+# Import dependencies for cleanup
+from app.dependencies import cleanup_vector_store
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -55,9 +42,7 @@ async def lifespan(app: FastAPI):
         await init_mongodb_db()
         logger.info("✅ MongoDB initialized successfully")
 
-        # Initialize vector store lazily to save memory during startup
-        global vector_store_manager
-        vector_store_manager = None  # Will be initialized on first use
+        # Vector store will be initialized lazily on first request
         logger.info("✅ Vector store will be initialized on first request")
         logger.info("🚀 Application startup completed successfully")
         
@@ -68,10 +53,8 @@ async def lifespan(app: FastAPI):
     yield
     
     try:
-        # Cleanup vector store
-        if vector_store_manager:
-            await vector_store_manager.cleanup()
-            
+        # Cleanup resources
+        await cleanup_vector_store()
         await disconnect_from_postgres()
         await disconnect_from_mongodb()
         logger.info("✅ Application shutdown completed successfully")

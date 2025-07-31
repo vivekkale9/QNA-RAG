@@ -3,8 +3,7 @@ from fastapi import HTTPException, UploadFile, status
 
 from ..services import DocumentService
 from ..models import DocumentResponse
-from ..db import MilvusVectorStore
-from main import get_vector_store
+from ..dependencies import get_vector_store
 
 class UploadController:
     

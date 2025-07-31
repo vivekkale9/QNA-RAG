@@ -5,12 +5,12 @@ from fastapi.responses import StreamingResponse
 import asyncio
 
 from ..utils import get_current_user
-from ..db import MilvusVectorStore, get_postgres_database
+from ..db import get_postgres_database
 from ..utils.sse import get_sse_headers, create_sse_generator, DocumentProcessingEventEmitter
 from ..services import DocumentService
 from ..models import DocumentResponse
 from ..controllers import UploadController
-from main import get_vector_store
+from ..dependencies import get_vector_store
 
 router = APIRouter(prefix="/upload", tags=["Document Upload"])
 document_service = DocumentService()
