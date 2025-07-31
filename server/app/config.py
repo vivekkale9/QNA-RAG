@@ -49,13 +49,18 @@ class Settings(BaseModel):
     refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
     secret_key: str = os.getenv("SECRET_KEY", "")
 
-    #Milvus
-    milvus_host: str = os.getenv("MILVUS_HOST", "localhost")
+    #Milvus/Zilliz Cloud Configuration
+    milvus_host: str = os.getenv("MILVUS_HOST", "")
     milvus_port: int = int(os.getenv("MILVUS_PORT", "19530"))
+    milvus_token: str = os.getenv("MILVUS_TOKEN", "")  # For Zilliz Cloud authentication
     milvus_collection_name: str = os.getenv("MILVUS_COLLECTION_NAME", "insurance_chunks")
-    milvus_index_type: str = os.getenv("MILVUS_INDEX_TYPE", "IVF_FLAT")
+    milvus_index_type: str = os.getenv("MILVUS_INDEX_TYPE", "AUTOINDEX")  # Better for Zilliz Cloud
     milvus_metric_type: str = os.getenv("MILVUS_METRIC_TYPE", "COSINE")
     milvus_nlist: int = int(os.getenv("MILVUS_NLIST", "128"))
+    
+    @property
+    def is_zilliz_cloud(self) -> bool:
+        return bool(self.milvus_token and self.milvus_host)
 
     # Embedding Configuration
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")

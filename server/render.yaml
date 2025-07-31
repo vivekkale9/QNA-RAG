@@ -5,16 +5,7 @@ services:
     region: oregon
     plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: |
-      ./scripts/start-milvus.sh &
-      sleep 45
-      uvicorn main:app --host 0.0.0.0 --port $PORT
-    disk:
-      name: milvus-data
-      mountPath: /opt/render/project/src/docker-volumes
-      sizeGB: 10
-    dockerCommand: |
-      apt-get update && apt-get install -y docker.io docker-compose-plugin curl
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.0
@@ -46,11 +37,21 @@ services:
         sync: false
       - key: MONGO_DB
         sync: false
-      # Local Milvus Configuration
+      # Zilliz Cloud (Milvus) Configuration
       - key: MILVUS_HOST
-        value: localhost
+        sync: false  # Move to Render dashboard for security
       - key: MILVUS_PORT
         value: 19530
+      - key: MILVUS_TOKEN
+        sync: false  # CRITICAL: Move to Render dashboard - never hardcode tokens!
+      - key: MILVUS_COLLECTION_NAME
+        value: insurance_chunks
+      - key: MILVUS_INDEX_TYPE
+        value: IVF_FLAT
+      - key: MILVUS_METRIC_TYPE
+        value: COSINE
+      - key: MILVUS_NLIST
+        value: 128
       # Security
       - key: SECRET_KEY
         sync: false

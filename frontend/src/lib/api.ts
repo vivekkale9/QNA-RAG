@@ -199,6 +199,78 @@ class ApiClient {
     const url = `/rag/admin/vector/rebuild${params.toString() ? `?${params.toString()}` : ''}`;
     return this.client.post(url);
   }
+
+  async rebuildVectorStoreWithProgress(
+    filters?: { user_filter?: string; document_filter?: string; batch_size?: number },
+    onProgress?: (data: {
+      status: string;
+      progress: number;
+      message: string;
+      total_chunks: number;
+      processed_chunks: number;
+      total_documents: number;
+      processed_documents: number;
+    }) => void
+  ) {
+    const params = new URLSearchParams();
+    if (filters?.user_filter) params.append('user_filter', filters.user_filter);
+    if (filters?.document_filter) params.append('document_filter', filters.document_filter);
+    if (filters?.batch_size) params.append('batch_size', filters.batch_size.toString());
+    
+    const url = `/rag/admin/vector/rebuild/stream${params.toString() ? `?${params.toString()}` : ''}`;
+    
+    const response = await fetch(`${this.client.defaults.baseURL}${url}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+        'Accept': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Rebuild failed: ${response.statusText}`);
+    }
+
+    if (!response.body) {
+      throw new Error('No response body');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (onProgress) {
+                onProgress(data);
+              }
+              
+              // If completed or failed, break out
+              if (data.status === 'completed' || data.status === 'failed') {
+                return { success: data.status === 'completed', data };
+              }
+            } catch (e) {
+              console.warn('Failed to parse SSE data:', line);
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return { success: true, data: { status: 'completed' } };
+  }
 }
 
 export const apiClient = new ApiClient();

@@ -378,6 +378,47 @@ describe('ApiClient', () => {
 
       expect(mockAxios.history.post[0].url).toBe('/rag/admin/vector/rebuild?user_filter=user123&document_filter=pdf&batch_size=50')
     })
+
+    it('should rebuild vector store with progress via SSE', async () => {
+      const progressData = [
+        { status: 'started', progress: 0, message: 'Starting rebuild...' },
+        { status: 'processing', progress: 50, message: 'Processing chunks...', total_chunks: 100, processed_chunks: 50 },
+        { status: 'completed', progress: 100, message: 'Rebuild completed!' },
+      ]
+
+      // Mock fetch for SSE
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        body: {
+          getReader: () => ({
+            read: vi.fn()
+              .mockResolvedValueOnce({
+                done: false,
+                value: new TextEncoder().encode(`data: ${JSON.stringify(progressData[0])}\n\n`)
+              })
+              .mockResolvedValueOnce({
+                done: false,
+                value: new TextEncoder().encode(`data: ${JSON.stringify(progressData[1])}\n\n`)
+              })
+              .mockResolvedValueOnce({
+                done: false,
+                value: new TextEncoder().encode(`data: ${JSON.stringify(progressData[2])}\n\n`)
+              })
+              .mockResolvedValueOnce({ done: true, value: undefined }),
+            releaseLock: vi.fn()
+          })
+        }
+      })
+
+      const progressCallback = vi.fn()
+      const result = await apiClient.rebuildVectorStoreWithProgress(undefined, progressCallback)
+
+      expect(progressCallback).toHaveBeenCalledTimes(3)
+      expect(progressCallback).toHaveBeenCalledWith(progressData[0])
+      expect(progressCallback).toHaveBeenCalledWith(progressData[1])
+      expect(progressCallback).toHaveBeenCalledWith(progressData[2])
+      expect(result.success).toBe(true)
+    })
   })
 
   describe('Request Interceptors', () => {

@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 
 from ..services.vector_rebuild_service import VectorRebuildService
 from ..db.milvus_vector_store import MilvusVectorStore
+from ..utils.sse import VectorRebuildEventEmitter
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,43 @@ class AdminVectorController:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Rebuild failed: {str(e)}"
             )
+    
+    async def rebuild_vector_store_with_events(
+        self,
+        user_filter: str = None,
+        document_filter: str = None,
+        batch_size: int = 100,
+        event_emitter: VectorRebuildEventEmitter = None
+    ) -> Dict[str, Any]:
+        """
+        Rebuild vector store from MongoDB backup with event emission for SSE.
+        
+        Args:
+            user_filter: Optional user ID to rebuild only specific user's data
+            document_filter: Optional document ID to rebuild only specific document
+            batch_size: Number of chunks to process in each batch
+            event_emitter: Event emitter for progress updates
+            
+        Returns:
+            Dict with rebuild results and statistics
+        """
+        try:
+            result = await self.rebuild_service.rebuild_from_mongodb(
+                user_filter=user_filter,
+                document_filter=document_filter,
+                batch_size=batch_size,
+                event_emitter=event_emitter
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Rebuild failed: {str(e)}")
+            # Don't raise HTTPException here as SSE will handle the error emission
+            return {
+                "status": "failed",
+                "error": str(e)
+            }
     
     async def get_backup_statistics(self) -> Dict[str, Any]:
         """

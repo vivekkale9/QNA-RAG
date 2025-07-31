@@ -56,14 +56,33 @@ class MilvusVectorStore:
             
     async def _connect_to_milvus(self) -> None:
         try:
-            connections.connect(
-                alias="default",
-                host=settings.milvus_host,
-                port=settings.milvus_port
-            )
-            logger.info(f"Connected to Milvus at {settings.milvus_host}:{settings.milvus_port}")
+            # Configure connection parameters for Zilliz Cloud serverless
+            if settings.milvus_token:
+                # Zilliz Cloud serverless connection
+                # Check if milvus_host already includes protocol scheme
+                host = settings.milvus_host
+                if not host.startswith(('http://', 'https://')):
+                    host = f"https://{host}"
+                
+                connection_params = {
+                    "alias": "default",
+                    "uri": host,
+                    "token": settings.milvus_token
+                }
+                logger.info(f"Connecting to Zilliz Cloud serverless at {host}")
+            else:
+                # Local Milvus connection
+                connection_params = {
+                    "alias": "default",
+                    "host": settings.milvus_host,
+                    "port": settings.milvus_port
+                }
+                logger.info(f"Connecting to local Milvus at {settings.milvus_host}:{settings.milvus_port}")
+            
+            connections.connect(**connection_params)
+            logger.info("✅ Successfully connected to Milvus")
         except Exception as e:
-            logger.error(f"Failed to connect to Milvus: {str(e)}")
+            logger.error(f"❌ Failed to connect to Milvus: {str(e)}")
             raise
             
     async def _load_embedding_model(self) -> None:
@@ -505,7 +524,7 @@ class MilvusVectorStore:
             await self.initialize()
             
         try:
-            stats = self.collection.get_stats()
+            # Use collection properties instead of deprecated get_stats()
             return {
                 "collection_name": self.collection_name,
                 "total_entities": self.collection.num_entities,
@@ -515,7 +534,8 @@ class MilvusVectorStore:
                 "metric_type": settings.milvus_metric_type,
                 "unique_users": 0,  # Placeholder - will be calculated elsewhere
                 "unique_documents": 0,  # Placeholder - will be calculated elsewhere
-                "raw_stats": stats
+                "is_empty": self.collection.is_empty,
+                "primary_field_name": self.collection.primary_field.name if self.collection.primary_field else None
             }
         except Exception as e:
             logger.error(f"Failed to get collection stats: {str(e)}")

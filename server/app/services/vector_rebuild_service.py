@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from ..db.milvus_vector_store import MilvusVectorStore
 from ..db.mongodb import Chunk, Document
 from ..utils.document_processor import DocumentProcessor
+from ..utils.sse import VectorRebuildEventEmitter, RebuildStatus
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,8 @@ class VectorRebuildService:
         self, 
         user_filter: Optional[str] = None,
         document_filter: Optional[str] = None,
-        batch_size: int = 100
+        batch_size: int = 100,
+        event_emitter: Optional[VectorRebuildEventEmitter] = None
     ) -> Dict[str, Any]:
         """
         Rebuild Milvus vector store from MongoDB backup data.
@@ -27,6 +29,7 @@ class VectorRebuildService:
             user_filter: Optional user ID to rebuild only specific user's data
             document_filter: Optional document ID to rebuild only specific document
             batch_size: Number of chunks to process in each batch
+            event_emitter: Optional event emitter for progress updates
             
         Returns:
             Dict with rebuild statistics and results
@@ -38,7 +41,6 @@ class VectorRebuildService:
             "processed_chunks": 0,
             "total_documents": 0,
             "processed_documents": 0,
-            "total_users": 0,
             "errors": [],
             "completed_at": None
         }
@@ -46,7 +48,14 @@ class VectorRebuildService:
         try:
             logger.info("Starting vector store rebuild from MongoDB...")
             
+            # Emit starting status
+            if event_emitter:
+                await event_emitter.emit_status(RebuildStatus.STARTED)
+            
             # Initialize new Milvus vector store
+            if event_emitter:
+                await event_emitter.emit_status(RebuildStatus.INITIALIZING, "Initializing vector store...")
+            
             vector_store = MilvusVectorStore()
             await vector_store.initialize()
             
@@ -65,9 +74,14 @@ class VectorRebuildService:
                 error_msg = f"MongoDB connection test failed: {str(conn_error)}"
                 rebuild_stats["errors"].append(error_msg)
                 logger.error(error_msg, exc_info=True)
+                if event_emitter:
+                    await event_emitter.emit_status(RebuildStatus.FAILED, error_msg)
                 raise
             
             # Build query filters
+            if event_emitter:
+                await event_emitter.emit_status(RebuildStatus.COUNTING, "Counting documents and chunks...")
+            
             query_filter = {}
             if user_filter:
                 # Filter by user via document relationship
@@ -86,6 +100,11 @@ class VectorRebuildService:
             else:
                 total_chunks = await Chunk.count()
             rebuild_stats["total_chunks"] = total_chunks
+            
+            # Update event emitter with totals
+            if event_emitter:
+                event_emitter.update_totals(total_chunks, 0)  # Will update documents count later
+                await event_emitter.emit_status(RebuildStatus.PROCESSING, f"Starting to process {total_chunks} chunks...")
             
             if total_chunks == 0:
                 rebuild_stats["status"] = "completed"
@@ -126,10 +145,16 @@ class VectorRebuildService:
                                     vector_store, 
                                     current_doc_id, 
                                     doc_chunks_batch, 
-                                    rebuild_stats
+                                    rebuild_stats,
+                                    event_emitter
                                 )
                                 doc_chunks_batch = []
                                 rebuild_stats["processed_documents"] += 1
+                                
+                                # Update progress
+                                if event_emitter:
+                                    event_emitter.update_progress(rebuild_stats["processed_chunks"], rebuild_stats["processed_documents"])
+                                    await event_emitter.emit_status(RebuildStatus.PROCESSING)
                         
                         current_doc_id = chunk.document_id
                         doc_chunks_batch.append(chunk)
@@ -140,10 +165,16 @@ class VectorRebuildService:
                                 vector_store, 
                                 current_doc_id, 
                                 doc_chunks_batch[:batch_size], 
-                                rebuild_stats
+                                rebuild_stats,
+                                event_emitter
                             )
                             doc_chunks_batch = doc_chunks_batch[batch_size:]
                             processed += batch_size
+                            
+                            # Update progress
+                            if event_emitter:
+                                event_emitter.update_progress(rebuild_stats["processed_chunks"], rebuild_stats["processed_documents"])
+                                await event_emitter.emit_status(RebuildStatus.PROCESSING)
                             
                             # Log progress
                             if processed % 100 == 0:  # More frequent logging
@@ -166,12 +197,15 @@ class VectorRebuildService:
                     vector_store, 
                     current_doc_id, 
                     doc_chunks_batch, 
-                    rebuild_stats
+                    rebuild_stats,
+                    event_emitter
                 )
                 rebuild_stats["processed_documents"] += 1
             
             # Final statistics
             logger.info("Finalizing vector store rebuild...")
+            if event_emitter:
+                await event_emitter.emit_status(RebuildStatus.FINALIZING, "Getting final statistics...")
             
             # Get final stats
             final_stats = await vector_store.get_collection_stats()
@@ -183,6 +217,12 @@ class VectorRebuildService:
                 "final_documents": final_stats.get("unique_documents", 0)
             })
             
+            # Emit completion
+            if event_emitter:
+                event_emitter.update_progress(rebuild_stats["processed_chunks"], rebuild_stats["processed_documents"])
+                completion_msg = f"Rebuild completed! Processed {rebuild_stats['processed_chunks']} chunks from {rebuild_stats['processed_documents']} documents."
+                await event_emitter.emit_status(RebuildStatus.COMPLETED, completion_msg)
+            
             logger.info(f"Rebuild completed! Processed {rebuild_stats['processed_chunks']} chunks from {rebuild_stats['processed_documents']} documents.")
                 
         except Exception as e:
@@ -191,6 +231,10 @@ class VectorRebuildService:
             rebuild_stats["status"] = "failed"
             rebuild_stats["completed_at"] = datetime.now(timezone.utc)
             logger.error(error_msg)
+            
+            # Emit failure
+            if event_emitter:
+                await event_emitter.emit_status(RebuildStatus.FAILED, error_msg)
         
         return rebuild_stats
     
@@ -214,7 +258,8 @@ class VectorRebuildService:
         vector_store: MilvusVectorStore, 
         document_id: str, 
         chunks: list, 
-        rebuild_stats: Dict[str, Any]
+        rebuild_stats: Dict[str, Any],
+        event_emitter: Optional[VectorRebuildEventEmitter] = None
     ):
         """Process a batch of chunks for a document."""
         try:
