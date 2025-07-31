@@ -69,20 +69,24 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:8080",
+]
+
+if settings.environment == "production":
+    origins = [
+        "https://qna-rag.vercel.app",
+        "https://qna-rag.onrender.com"
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # React default
-        "http://localhost:5173",  # Vite default  
-        "http://localhost:8080",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173", 
-        "http://127.0.0.1:8080",
-        "https://qna-rag.onrender.com"
-    ] if settings.environment == "development" else [
-        "https://*.vercel.app",  # Vercel deployments
-        "https://qna-rag.onrender.com"
-    ],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
