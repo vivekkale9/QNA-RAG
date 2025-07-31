@@ -128,12 +128,11 @@ QNA_RAG/
 
 ---
 
-## 🔮 Future Improvements
+## 🔮 Scope For Improvements
 
 1. **Test Coverage**: Expand unit and integration tests, including edge-case scenarios for PDF parsing and concurrency.
-2. **Persistent Spark Jobs**: Transition document embedding to streaming or long-lived Spark sessions to reduce cold-start latency.
-3. **LLM Provider Configurability**: Extend frontend settings to allow tenant-specific LLM provider selection (e.g., OpenAI, Groq).
-4. **Memory Optimization**: Offload large embedding models to remote inference (e.g., Hugging Face Spaces) or increase server memory.
-5. **UI/UX Enhancements**: Improve chat interface with conversation threading, syntax highlighting, and document annotation tools.
+2. **LLM Provider Configurability**: Extend frontend settings to allow tenant-specific LLM provider selection (e.g., OpenAI, Groq).
+3. **Memory Optimization**: Offload large embedding models to remote inference (e.g., Hugging Face Spaces) or increase server memory.
+4. **UI/UX Enhancements**: Improve chat interface with conversation threading, syntax highlighting, and document annotation tools.
 
 ---
