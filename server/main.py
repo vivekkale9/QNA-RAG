@@ -80,7 +80,7 @@ app.add_middleware(
         "http://127.0.0.1:8080"
     ] if settings.environment == "development" else [
         "https://*.vercel.app",  # Vercel deployments
-        "https://your-custom-domain.com"  # Your custom domain if any
+        "https://qna-gukl7rbg4-viveks-projects-ef4237e1.vercel.app/"
     ],
     allow_credentials=True,
     allow_methods=["*"],
