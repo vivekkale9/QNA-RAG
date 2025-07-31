@@ -22,7 +22,7 @@ aiofiles==23.2.1
 
 # ML/Vector dependencies (optimized versions)
 numpy==1.26.4
-sentence-transformers==2.2.2
+sentence-transformers==2.3.0
 pymilvus==2.3.4
 marshmallow==3.21.3
 
